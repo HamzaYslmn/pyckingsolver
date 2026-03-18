@@ -37,6 +37,8 @@ class Solution:
         """Parse a solution dict (from solver JSON output)."""
         bins: list[SolutionBin] = []
         for jb in data.get("bins", []):
+            if jb is None:
+                continue
             sol_bin = SolutionBin(
                 bin_type_id=jb.get("id", 0),
                 copies=jb.get("copies", 1),
