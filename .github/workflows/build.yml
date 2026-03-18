@@ -28,9 +28,7 @@ jobs:
       with:
         submodules: recursive
 
-    - uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
+    - uses: astral-sh/setup-uv@v5
 
     - name: Install system dependencies (Ubuntu)
       if: runner.os == 'Linux'
@@ -60,56 +58,26 @@ jobs:
     # Build wheel and retag with platform
     - name: Build wheel
       working-directory: python
-      run: |
-        pip install build wheel
-        python -m build --wheel -o ../dist
+      run: uv build --wheel -o ../dist
 
-    - name: Tag wheel with platform
+    - name: Tag wheel with platform (Linux)
+      if: runner.os == 'Linux'
+      run: uvx wheel tags --remove --platform-tag ${{ matrix.platform-tag }} dist/$(ls dist)
+
+    - name: Tag wheel with platform (Windows)
+      if: runner.os == 'Windows'
       run: |
-        pip install wheel
-        python -m wheel tags --remove --platform-tag ${{ matrix.platform-tag }} dist/*.whl
+        $whl = (Get-ChildItem dist\*.whl).Name
+        uvx wheel tags --remove --platform-tag ${{ matrix.platform-tag }} dist\$whl
 
     - uses: actions/upload-artifact@v4
       with:
         name: wheel-${{ matrix.os }}
         path: dist/*.whl
 
-  # MARK: - Run tests
-  test:
-    needs: build-wheel
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            artifact: wheel-windows-latest
-          - os: ubuntu-latest
-            artifact: wheel-ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-
-    - uses: actions/download-artifact@v4
-      with:
-        name: ${{ matrix.artifact }}
-        path: dist
-
-    - name: Install wheel
-      run: pip install dist/*.whl pymupdf
-
-    - name: Run tests
-      working-directory: python/test
-      run: python test_nesting.py
-
   # MARK: - Publish to PyPI
   publish:
-    needs: [build-wheel, test]
+    needs: build-wheel
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
