@@ -1,0 +1,11 @@
+build/
+.vscode
+AGENTS.md
+.github/copilot-instructions.md
+__pycache__
+
+# Python package artifacts
+python/.venv/
+python/packingsolver/bin/
+python/test/_tmp_*
+python/test/*.png

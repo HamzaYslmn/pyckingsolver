@@ -1,0 +1,56 @@
+[project]
+name = "pyckingsolver"
+version = "0.1.0"
+description = "Shapely-based Python interface for PackingSolver — 2D irregular bin packing & nesting"
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Hamza Yesilmen", email = "Hamzayesilmen7@gmail.com"},
+]
+keywords = [
+    "packing", "nesting", "bin-packing", "cutting-stock",
+    "2d-packing", "irregular", "shapely", "geometry", "cnc", "laser-cutting",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed",
+]
+dependencies = [
+    "shapely>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/HamzaYslmn/pyckingsolver"
+Repository = "https://github.com/HamzaYslmn/pyckingsolver"
+Documentation = "https://github.com/HamzaYslmn/pyckingsolver/tree/master/python"
+Issues = "https://github.com/HamzaYslmn/pyckingsolver/issues"
+"Upstream C++ Solver" = "https://github.com/fontanf/packingsolver"
+
+[project.optional-dependencies]
+viz = ["plotly>=5.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["packingsolver"]
+artifacts = ["packingsolver/bin/*"]
+
+[dependency-groups]
+dev = [
+    "pymupdf>=1.27.2",
+]
