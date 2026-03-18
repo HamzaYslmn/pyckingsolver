@@ -36,8 +36,7 @@ jobs:
     - name: Build C++ solver
       working-directory: extern/packingsolver
       run: |
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
         cmake --build build --config Release --parallel
 
     # Copy compiled binary into the Python package
