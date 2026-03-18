@@ -18,6 +18,11 @@ class Solver:
 
     Usage::
 
+        solver = Solver()  # auto-find bundled binary / PATH / common build paths
+        solution = solver.solve(instance, time_limit=30)
+
+    If the binary lives in a custom location, pass it explicitly::
+
         solver = Solver(binary="path/to/packingsolver_irregular")
         solution = solver.solve(instance, time_limit=30)
     """
@@ -74,6 +79,7 @@ class Solver:
         *,
         time_limit: float = 60,
         verbosity_level: int = 0,
+        json_output: str | Path | None = None,
         output_path: str | Path | None = None,
         extra_args: list[str] | None = None,
     ) -> Solution:
@@ -83,9 +89,17 @@ class Solver:
             instance: An Instance object or path to a JSON file.
             time_limit: Maximum solving time in seconds.
             verbosity_level: 0 = quiet, 1 = summary, 2 = verbose.
-            output_path: Where to write the solution JSON. Uses a temp file if None.
+            json_output: Optional path to persist the parsed solution JSON.
+            output_path: Backward-compatible alias for ``json_output``.
             extra_args: Additional CLI arguments for the solver.
         """
+        if json_output is not None and output_path is not None:
+            raise ValueError("Pass only one of 'json_output' or 'output_path'.")
+
+        export_path = Path(json_output) if json_output is not None else (
+            Path(output_path) if output_path is not None else None
+        )
+
         with tempfile.TemporaryDirectory(prefix="packingsolver_") as tmpdir:
             tmp = Path(tmpdir)
 
@@ -96,8 +110,9 @@ class Solver:
             else:
                 input_path = Path(instance)
 
-            # Resolve output
-            sol_path = Path(output_path) if output_path else tmp / "solution.json"
+            # Always keep the solver certificate internal. Export, if requested,
+            # happens after parsing through the Python wrapper.
+            sol_path = tmp / "solution.json"
 
             # Build command
             cmd = [
@@ -125,7 +140,10 @@ class Solver:
                     f"Solver produced no output.\nstdout: {result.stdout}"
                 )
 
-            return Solution.from_json(sol_path)
+            solution = Solution.from_json(sol_path)
+            if export_path is not None:
+                solution.to_json(export_path)
+            return solution
 
     def __repr__(self) -> str:
         return f"Solver(binary={str(self.binary)!r}, type={self.problem_type!r})"
