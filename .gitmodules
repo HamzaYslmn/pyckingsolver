@@ -1,0 +1,3 @@
+[submodule "extern/packingsolver"]
+	path = extern/packingsolver
+	url = https://github.com/fontanf/packingsolver.git

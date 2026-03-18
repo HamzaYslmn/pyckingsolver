@@ -1,0 +1,128 @@
+name: Build & Publish
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+
+  # MARK: - Build platform wheels
+  build-wheel:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform-tag: win_amd64
+            binary-name: packingsolver_irregular.exe
+          - os: ubuntu-latest
+            platform-tag: manylinux_2_35_x86_64
+            binary-name: packingsolver_irregular
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install system dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: sudo apt-get -y install liblapack-dev libbz2-dev
+
+    - name: Build C++ solver
+      working-directory: extern/packingsolver
+      run: |
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release --parallel
+
+    # Copy compiled binary into the Python package
+    - name: Bundle solver binary (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        mkdir -p python/packingsolver/bin
+        cp extern/packingsolver/build/src/irregular/${{ matrix.binary-name }} \
+           python/packingsolver/bin/
+
+    - name: Bundle solver binary (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        New-Item -ItemType Directory -Path python/packingsolver/bin -Force | Out-Null
+        Copy-Item extern/packingsolver/build/src/irregular/Release/${{ matrix.binary-name }} `
+                   python/packingsolver/bin/
+
+    # Build wheel and retag with platform
+    - name: Build wheel
+      working-directory: python
+      run: |
+        pip install build wheel
+        python -m build --wheel -o ../dist
+
+    - name: Tag wheel with platform
+      run: |
+        pip install wheel
+        python -m wheel tags --remove --platform-tag ${{ matrix.platform-tag }} dist/*.whl
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: wheel-${{ matrix.os }}
+        path: dist/*.whl
+
+  # MARK: - Run tests
+  test:
+    needs: build-wheel
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: wheel-windows-latest
+          - os: ubuntu-latest
+            artifact: wheel-ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: dist
+
+    - name: Install wheel
+      run: pip install dist/*.whl pymupdf
+
+    - name: Run tests
+      working-directory: python/test
+      run: python test_nesting.py
+
+  # MARK: - Publish to PyPI
+  publish:
+    needs: [build-wheel, test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        path: dist
+        merge-multiple: true
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages-dir: dist
