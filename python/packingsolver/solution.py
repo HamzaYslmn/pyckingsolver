@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 from typing import Any
 
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon
 from shapely import affinity
 
 from packingsolver.types import SolutionItem, SolutionBin
-from packingsolver.geometry import elements_to_shapely, shape_with_holes_to_shapely
+from packingsolver.geometry import (
+    elements_to_shapely,
+    shape_with_holes_to_shapely,
+)
 
 
 # MARK: - Solution
@@ -18,8 +22,13 @@ from packingsolver.geometry import elements_to_shapely, shape_with_holes_to_shap
 class Solution:
     """Parsed packing solution with Shapely geometries."""
 
-    def __init__(self, bins: list[SolutionBin]):
+    def __init__(
+        self,
+        bins: list[SolutionBin],
+        _raw: dict[str, Any] | None = None,
+    ):
         self.bins = bins
+        self._raw = deepcopy(_raw) if _raw is not None else None
 
     # MARK: Parsing
 
@@ -31,6 +40,11 @@ class Solution:
             sol_bin = SolutionBin(
                 bin_type_id=jb.get("id", 0),
                 copies=jb.get("copies", 1),
+                _extra={
+                    k: deepcopy(v)
+                    for k, v in jb.items()
+                    if k not in {"id", "copies", "shape", "defects", "items"}
+                },
             )
 
             # Bin shape
@@ -54,6 +68,11 @@ class Solution:
                     y=ji.get("y", 0.0),
                     angle=ji.get("angle", 0.0),
                     mirror=ji.get("mirror", False),
+                    _extra={
+                        k: deepcopy(v)
+                        for k, v in ji.items()
+                        if k not in {"id", "x", "y", "angle", "mirror", "item_shapes"}
+                    },
                 )
                 for js in ji.get("item_shapes", []):
                     si.shapes.append(
@@ -64,13 +83,31 @@ class Solution:
                     )
                 sol_bin.items.append(si)
             bins.append(sol_bin)
-        return cls(bins)
+        return cls(bins, _raw=data)
 
     @classmethod
     def from_json(cls, path: str | Path) -> Solution:
         """Load a solution from a JSON file."""
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         return cls.from_dict(data)
+
+    # MARK: Serialization
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the solution to the solver JSON shape."""
+        if self._raw is not None:
+            return deepcopy(self._raw)
+
+        return {
+            "bins": [self._bin_to_dict(sbin) for sbin in self.bins],
+        }
+
+    def to_json(self, path: str | Path | None = None, **kwargs) -> str:
+        """Serialize to JSON string. Optionally write to *path*."""
+        text = json.dumps(self.to_dict(), indent=4, **kwargs)
+        if path is not None:
+            Path(path).write_text(text, encoding="utf-8")
+        return text
 
     # MARK: Helpers
 
@@ -107,3 +144,83 @@ class Solution:
             f"Solution(bins={len(self.bins)}, "
             f"items={self.total_item_count()})"
         )
+
+    # MARK: Internal
+
+    def _bin_to_dict(self, sbin: SolutionBin) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "id": sbin.bin_type_id,
+            "copies": sbin.copies,
+        }
+        if sbin.shape is not None:
+            data["shape"] = self._shape_to_elements(sbin.shape)
+        if sbin.defects:
+            data["defects"] = [self._shape_with_holes_to_dict(defect) for defect in sbin.defects]
+        if sbin.items:
+            data["items"] = [self._item_to_dict(item) for item in sbin.items]
+        data.update(deepcopy(sbin._extra))
+        return data
+
+    def _item_to_dict(self, item: SolutionItem) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "id": item.item_type_id,
+            "x": item.x,
+            "y": item.y,
+            "angle": item.angle,
+            "mirror": item.mirror,
+        }
+        if item.shapes:
+            data["item_shapes"] = [self._solution_shape_to_dict(shape) for shape in item.shapes]
+        data.update(deepcopy(item._extra))
+        return data
+
+    def _solution_shape_to_dict(self, shape: Polygon | MultiPolygon) -> dict[str, Any]:
+        polygon = self._as_polygon(shape)
+        data = {
+            "shape": self._ring_to_elements(polygon.exterior.coords),
+        }
+        if polygon.interiors:
+            data["holes"] = [
+                self._ring_to_elements(ring.coords) for ring in polygon.interiors
+            ]
+        return data
+
+    def _shape_with_holes_to_dict(self, shape: Polygon | MultiPolygon) -> dict[str, Any]:
+        polygon = self._as_polygon(shape)
+        data = {
+            "shape": self._ring_to_elements(polygon.exterior.coords),
+        }
+        if polygon.interiors:
+            data["holes"] = [
+                self._ring_to_elements(ring.coords) for ring in polygon.interiors
+            ]
+        return data
+
+    def _shape_to_elements(self, shape: Polygon | MultiPolygon) -> list[dict[str, Any]]:
+        polygon = self._as_polygon(shape)
+        return self._ring_to_elements(polygon.exterior.coords)
+
+    def _as_polygon(self, shape: Polygon | MultiPolygon) -> Polygon:
+        if isinstance(shape, Polygon):
+            return shape
+
+        polygons = list(shape.geoms)
+        if len(polygons) == 1:
+            return polygons[0]
+        raise TypeError("Cannot serialize MultiPolygon solution shapes with multiple parts.")
+
+    def _ring_to_elements(self, coords) -> list[dict[str, Any]]:
+        points = list(coords)
+        if len(points) > 1 and points[0] == points[-1]:
+            points = points[:-1]
+        elements: list[dict[str, Any]] = []
+        for i, (x1, y1) in enumerate(points):
+            x2, y2 = points[(i + 1) % len(points)]
+            elements.append({
+                "type": "LineSegment",
+                "xs": x1,
+                "ys": y1,
+                "xe": x2,
+                "ye": y2,
+            })
+        return elements

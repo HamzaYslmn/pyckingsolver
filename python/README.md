@@ -36,8 +36,8 @@ b.add_item_type(washer, copies=3)
 
 instance = b.build()
 
-# Solve (requires compiled C++ binary)
-solver = Solver(binary="path/to/packingsolver_irregular")
+# Solve
+solver = Solver()  # auto-finds bundled binary / PATH / common build paths
 solution = solver.solve(instance, time_limit=30)
 
 print(f"{solution.total_item_count()} items in {solution.total_bins_used()} bins")
@@ -127,21 +127,42 @@ instance = Instance.from_dict(d)
 ### Solver
 
 ```python
+# Simplest usage
+solver = Solver()
+solution = solver.solve(instance, time_limit=30)
+```
+
+You do not need to hardcode a binary path such as:
+
+```python
+_BINARY = ".../packingsolver_irregular.exe"
+```
+
+unless your solver binary lives in a custom location that `Solver()` cannot
+discover automatically.
+
+```python
+# Custom binary location (optional)
 solver = Solver(binary="path/to/packingsolver_irregular")
 
 solution = solver.solve(
     instance,
     time_limit=60,          # seconds
     verbosity_level=1,      # 0=quiet, 1=summary, 2=verbose
-    output_path="sol.json", # optional: save solution JSON
+    json_output="sol.json", # optional: save solution JSON
     extra_args=["--flag"],  # additional CLI args
 )
 ```
+
+`solve()` always returns a Python `Solution` in memory. The wrapper still uses
+temporary JSON files internally because the C++ CLI is file-based, but it only
+persists solution JSON when you ask for it.
 
 ### Solution
 
 ```python
 solution = Solution.from_json("solution.json")
+solution.to_json("solution-copy.json")
 
 solution.total_item_count()   # total items placed
 solution.total_bins_used()    # total bins used
@@ -210,10 +231,9 @@ cmake --build build --config Release
 ## How It Works
 
 ```
-Python (Shapely)  →  JSON  →  C++ Solver  →  JSON  →  Python (Shapely)
-     build             ↓          ↓            ↓          parse
-  InstanceBuilder   instance   optimize     solution    Solution
-                     .json                   .json
+Python (Shapely)  →  temp JSON  →  C++ Solver  →  temp JSON  →  Python (Shapely)
+     build               ↓            ↓             ↓            parse
+  InstanceBuilder     instance     optimize      solution      Solution
 ```
 
 1. **Build** — define bins and items as Shapely Polygons via `InstanceBuilder`
