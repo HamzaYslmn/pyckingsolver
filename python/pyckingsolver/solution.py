@@ -10,8 +10,8 @@ from typing import Any
 from shapely.geometry import Polygon, MultiPolygon
 from shapely import affinity
 
-from packingsolver.types import SolutionItem, SolutionBin
-from packingsolver.geometry import (
+from pyckingsolver.types import SolutionItem, SolutionBin
+from pyckingsolver.geometry import (
     elements_to_shapely,
     shape_with_holes_to_shapely,
 )

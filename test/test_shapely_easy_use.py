@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from shapely.geometry import Point, Polygon
 
-from packingsolver import InstanceBuilder, Objective, Solver
+from pyckingsolver import InstanceBuilder, Objective, Solver
 
 
 def main() -> None:

@@ -12,7 +12,7 @@ from typing import Any
 
 from shapely.geometry import Polygon
 
-from packingsolver.types import (
+from pyckingsolver.types import (
     Objective,
     Corner,
     Parameters,
@@ -21,7 +21,7 @@ from packingsolver.types import (
     ItemType,
     ItemShape,
 )
-from packingsolver.geometry import (
+from pyckingsolver.geometry import (
     json_shape_to_shapely,
     json_shape_with_holes_to_shapely,
     shapely_to_polygon_json,

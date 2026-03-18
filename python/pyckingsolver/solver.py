@@ -7,8 +7,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from packingsolver.instance import Instance
-from packingsolver.solution import Solution
+from pyckingsolver.instance import Instance
+from pyckingsolver.solution import Solution
 
 
 # MARK: - Solver
