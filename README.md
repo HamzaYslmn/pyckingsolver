@@ -4,7 +4,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/pyckingsolver.svg)](https://pypi.org/project/pyckingsolver/)
 [![Python 3.10+](https://img.shields.io/pypi/pyversions/pyckingsolver.svg)](https://pypi.org/project/pyckingsolver/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Build](https://github.com/HamzaYslmn/pyckingsolver/actions/workflows/build.yml/badge.svg)](https://github.com/HamzaYslmn/pyckingsolver/actions)
 
 Pack irregular shapes into bins — rectangles, circles, arbitrary polygons with holes.
@@ -42,7 +42,7 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ```python
 from shapely.geometry import Polygon, Point
-from packingsolver import InstanceBuilder, Objective, Solver
+from pyckingsolver import InstanceBuilder, Objective, Solver
 
 b = InstanceBuilder(Objective.OPEN_DIMENSION_X)
 b.add_bin_type_rectangle(1200, 600)
@@ -75,7 +75,7 @@ Choose what the solver optimizes:
 | `BIN_PACKING_WITH_LEFTOVERS` | Bin packing that tracks **reusable scrap** |
 
 ```python
-from packingsolver import Objective
+from pyckingsolver import Objective
 
 b = InstanceBuilder(Objective.BIN_PACKING)
 ```
@@ -194,7 +194,7 @@ b.set_open_dimension_xy_aspect_ratio(1.5)  # enforce width/height <= 1.5
 For `BIN_PACKING_WITH_LEFTOVERS`, set the reference corner for scrap:
 
 ```python
-from packingsolver import Corner
+from pyckingsolver import Corner
 
 b.set_leftover_corner(Corner.BOTTOM_LEFT)   # default
 b.set_leftover_corner(Corner.TOP_RIGHT)
@@ -210,7 +210,7 @@ Minimize material usage from a fixed sheet with kerf spacing:
 
 ```python
 from shapely.geometry import Polygon, Point
-from packingsolver import InstanceBuilder, Objective, Solver
+from pyckingsolver import InstanceBuilder, Objective, Solver
 
 b = InstanceBuilder(Objective.BIN_PACKING)
 b.set_item_item_minimum_spacing(2.0)        # 2mm laser kerf
@@ -329,7 +329,7 @@ b.add_bin_type(offcut)
 ## Solver
 
 ```python
-from packingsolver import Solver
+from pyckingsolver import Solver
 
 # Auto-discover bundled binary
 solver = Solver()
@@ -409,7 +409,7 @@ solution = Solution.from_json("solution.json")
 ## Geometry Helpers
 
 ```python
-from packingsolver import (
+from pyckingsolver import (
     shapely_to_polygon_json,        # Shapely Polygon → solver JSON dict
     json_shape_to_shapely,          # solver JSON dict → Shapely Polygon
     json_shape_with_holes_to_shapely,  # with interior holes

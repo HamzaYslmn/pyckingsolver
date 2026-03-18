@@ -43,16 +43,16 @@ jobs:
     - name: Bundle solver binary (Linux)
       if: runner.os == 'Linux'
       run: |
-        mkdir -p python/packingsolver/bin
+        mkdir -p python/pyckingsolver/bin
         cp extern/packingsolver/build/src/irregular/${{ matrix.binary-name }} \
-           python/packingsolver/bin/
+           python/pyckingsolver/bin/
 
     - name: Bundle solver binary (Windows)
       if: runner.os == 'Windows'
       run: |
-        New-Item -ItemType Directory -Path python/packingsolver/bin -Force | Out-Null
+        New-Item -ItemType Directory -Path python/pyckingsolver/bin -Force | Out-Null
         Copy-Item extern/packingsolver/build/src/irregular/Release/${{ matrix.binary-name }} `
-                   python/packingsolver/bin/
+                   python/pyckingsolver/bin/
 
     # Build wheel and retag with platform
     - name: Build wheel

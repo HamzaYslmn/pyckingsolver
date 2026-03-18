@@ -9,7 +9,7 @@ from pathlib import Path
 import pymupdf
 from shapely.geometry import Polygon, Point
 
-from packingsolver import Instance, InstanceBuilder, Objective, Solution
+from pyckingsolver import Instance, InstanceBuilder, Objective, Solution
 
 # MARK: - Paths
 
@@ -24,7 +24,7 @@ _OUT = Path(__file__).resolve().parent
 
 def _find_solver() -> str:
     """Find the solver binary — bundled (pip install) or local build."""
-    from packingsolver.solver import Solver
+    from pyckingsolver.solver import Solver
     return str(Solver._find_binary("irregular"))
 
 
