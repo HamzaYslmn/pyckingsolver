@@ -18,25 +18,62 @@ from shapely.geometry import Polygon, MultiPolygon
 class Objective(str, enum.Enum):
     """Packing objective function.
 
-    New values added by the C++ solver are accepted via ``Objective(value)``.
+    The C++ solver accepts multiple formats per objective (kebab-case,
+    PascalCase, abbreviation).  This enum stores the canonical kebab-case
+    form and normalises all alternative spellings via ``_missing_``.
     """
+    DEFAULT = "default"
     KNAPSACK = "knapsack"
     BIN_PACKING = "bin-packing"
     BIN_PACKING_WITH_LEFTOVERS = "bin-packing-with-leftovers"
     OPEN_DIMENSION_X = "open-dimension-x"
     OPEN_DIMENSION_Y = "open-dimension-y"
+    OPEN_DIMENSION_Z = "open-dimension-z"
     OPEN_DIMENSION_XY = "open-dimension-xy"
     VARIABLE_SIZED_BIN_PACKING = "variable-sized-bin-packing"
+    SEQUENTIAL_ONEDIMENSIONAL_RECTANGLE_SUBPROBLEM = (
+        "sequential-onedimensional-rectangle-subproblem"
+    )
 
     @classmethod
     def _missing_(cls, value: object):
-        """Accept unknown objective strings for forward-compatibility."""
+        """Accept PascalCase, abbreviations, and unknown strings."""
         if isinstance(value, str):
+            canon = _OBJECTIVE_ALIASES.get(value)
+            if canon is not None:
+                return cls(canon)
+            # Forward-compat: unknown string kept as-is
             obj = str.__new__(cls, value)
             obj._name_ = value
             obj._value_ = value
             return obj
         return None
+
+
+# All C++ accepted aliases → canonical kebab-case value
+_OBJECTIVE_ALIASES: dict[str, str] = {
+    # PascalCase
+    "Default": "default",
+    "Knapsack": "knapsack",
+    "KP": "knapsack",
+    "BinPacking": "bin-packing",
+    "BPP": "bin-packing",
+    "BinPackingWithLeftovers": "bin-packing-with-leftovers",
+    "BPPL": "bin-packing-with-leftovers",
+    "OpenDimensionX": "open-dimension-x",
+    "ODX": "open-dimension-x",
+    "OpenDimensionY": "open-dimension-y",
+    "ODY": "open-dimension-y",
+    "OpenDimensionZ": "open-dimension-z",
+    "ODZ": "open-dimension-z",
+    "OpenDimensionXY": "open-dimension-xy",
+    "ODXY": "open-dimension-xy",
+    "VariableSizedBinPacking": "variable-sized-bin-packing",
+    "VBPP": "variable-sized-bin-packing",
+    "SequentialOneDimensionalRectangleSubproblem":
+        "sequential-onedimensional-rectangle-subproblem",
+    "BDRS": "sequential-onedimensional-rectangle-subproblem",
+}
 
 
 class Corner(str, enum.Enum):
@@ -45,6 +82,27 @@ class Corner(str, enum.Enum):
     BOTTOM_RIGHT = "BottomRight"
     TOP_LEFT = "TopLeft"
     TOP_RIGHT = "TopRight"
+
+    @classmethod
+    def _missing_(cls, value: object):
+        """Accept abbreviated and kebab-case corner strings."""
+        if isinstance(value, str):
+            canon = _CORNER_ALIASES.get(value)
+            if canon is not None:
+                return cls(canon)
+        return None
+
+
+_CORNER_ALIASES: dict[str, str] = {
+    "bl": "BottomLeft",
+    "br": "BottomRight",
+    "tl": "TopLeft",
+    "tr": "TopRight",
+    "bottom-left": "BottomLeft",
+    "bottom-right": "BottomRight",
+    "top-left": "TopLeft",
+    "top-right": "TopRight",
+}
 
 
 # MARK: - Parameters

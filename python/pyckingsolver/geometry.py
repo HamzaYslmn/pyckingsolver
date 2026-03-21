@@ -51,7 +51,9 @@ def json_shape_to_shapely(
     if stype == "circle":
         return circle_to_polygon(data["radius"])
     if stype == "rectangle":
-        w, h = data["width"], data["height"]
+        w, h = data.get("width"), data.get("height")
+        if w is None or h is None:
+            return Polygon()
         return Polygon([(0, 0), (w, 0), (w, h), (0, h)])
     if stype == "polygon":
         verts = [(v["x"], v["y"]) for v in data["vertices"]]
@@ -150,7 +152,9 @@ def circle_to_polygon(
     resolution: int = ARC_RESOLUTION,
 ) -> Polygon:
     """Create a Shapely Polygon approximating a circle."""
-    return Point(*center).buffer(radius, resolution=resolution)
+    if radius is None or radius <= 0:
+        return Polygon()
+    return Point(*center).buffer(float(radius), resolution=resolution)
 
 
 # MARK: - Internal

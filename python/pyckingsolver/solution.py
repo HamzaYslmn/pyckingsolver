@@ -20,7 +20,15 @@ from pyckingsolver.geometry import (
 # MARK: - Solution
 
 class Solution:
-    """Parsed packing solution with Shapely geometries."""
+    """Parsed packing solution with Shapely geometries.
+
+    Attributes:
+        bins: List of :class:`SolutionBin` objects.
+        metrics: Dict of solver statistics populated when the solver writes
+            an ``--output`` JSON (e.g. ``NumberOfItems``, ``BinCost``,
+            ``FullWastePercentage``, ``DensityX``, ``LeftoverValue``, …).
+            Empty dict when metrics are unavailable.
+    """
 
     def __init__(
         self,
@@ -28,6 +36,7 @@ class Solution:
         _raw: dict[str, Any] | None = None,
     ):
         self.bins = bins
+        self.metrics: dict[str, Any] = {}
         self._raw = deepcopy(_raw) if _raw is not None else None
 
     # MARK: Parsing
