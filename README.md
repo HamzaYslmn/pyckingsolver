@@ -73,6 +73,18 @@ Choose what the solver optimizes:
 | `KNAPSACK` | Maximize **value** of items in one bin |
 | `VARIABLE_SIZED_BIN_PACKING` | Multiple bin sizes with costs — minimize total cost |
 | `BIN_PACKING_WITH_LEFTOVERS` | Bin packing that tracks **reusable scrap** |
+| `DEFAULT` | Let the solver pick the best objective |
+| `OPEN_DIMENSION_Z` | Minimize the Z dimension (3D problems) |
+
+All C++ naming conventions are accepted — kebab-case, PascalCase, and abbreviations:
+
+```python
+Objective("bin-packing")             # kebab-case (canonical)
+Objective("BinPacking")              # PascalCase
+Objective("BPP")                     # abbreviation
+Objective("BinPackingWithLeftovers")  # PascalCase
+Objective("BPPL")                    # abbreviation
+```
 
 ```python
 from pyckingsolver import Objective
@@ -198,6 +210,14 @@ from pyckingsolver import Corner
 
 b.set_leftover_corner(Corner.BOTTOM_LEFT)   # default
 b.set_leftover_corner(Corner.TOP_RIGHT)
+```
+
+Corners accept all C++ naming formats:
+
+```python
+Corner("BottomLeft")    # PascalCase (canonical)
+Corner("bl")            # abbreviation
+Corner("bottom-left")   # kebab-case
 ```
 
 ---
@@ -329,7 +349,7 @@ b.add_bin_type(offcut)
 ## Solver
 
 ```python
-from pyckingsolver import Solver
+from pyckingsolver import Solver, Corner
 
 # Auto-discover bundled binary
 solver = Solver()
@@ -345,8 +365,79 @@ solution = solver.solve(
     time_limit=60,              # seconds
     verbosity_level=1,          # 0=quiet, 1=summary, 2=verbose
     output_path="sol.json",     # optional: persist solution JSON
-    extra_args=["--flag"],      # pass extra CLI args to solver
 )
+```
+
+### Algorithm Control
+
+Fine-tune the solver's strategy:
+
+```python
+solution = solver.solve(
+    instance,
+    time_limit=120,
+    # Choose optimization mode
+    optimization_mode="Anytime",           # "Anytime" | "NotAnytime" | "NotAnytimeDeterministic"
+    # Enable/disable algorithm components
+    use_tree_search=True,
+    use_sequential_single_knapsack=True,
+    use_sequential_value_correction=True,
+    use_column_generation=False,
+    use_dichotomic_search=False,
+)
+```
+
+### Instance-Level Overrides
+
+Override instance parameters from the solver call — useful for batch experiments:
+
+```python
+solution = solver.solve(
+    instance,
+    time_limit=60,
+    item_item_minimum_spacing=3.0,          # override kerf gap
+    item_bin_minimum_spacing=5.0,           # override edge clearance
+    leftover_corner=Corner.TOP_RIGHT,       # override scrap corner
+    bin_unweighted=True,                    # set bin costs to areas
+    unweighted=True,                        # set item profits to areas
+)
+```
+
+### Post-Processing
+
+Anchor items to a specific corner after solving:
+
+```python
+solution = solver.solve(
+    instance,
+    time_limit=60,
+    anchor_to_corner=True,
+    anchor_to_corner_corner=Corner.BOTTOM_LEFT,
+)
+```
+
+### Algorithm Tuning
+
+Advanced parameters for algorithm performance tuning:
+
+```python
+solution = solver.solve(
+    instance,
+    time_limit=120,
+    initial_maximum_approximation_ratio=0.20,
+    maximum_approximation_ratio_factor=0.75,
+    sequential_value_correction_subproblem_queue_size=128,
+    column_generation_subproblem_queue_size=128,
+    not_anytime_tree_search_queue_size=512,
+)
+```
+
+### Forward-Compatible Extra Args
+
+Pass any CLI flag directly for new solver features:
+
+```python
+solution = solver.solve(instance, extra_args=["--some-new-flag", "value"])
 ```
 
 ---
@@ -369,6 +460,36 @@ for item in solution.all_items():
     item.angle                  # rotation in degrees
     item.mirror                 # bool: mirrored?
     item.shapes                 # list[Polygon] — absolute coordinates, ready to use
+```
+
+### Solver Metrics
+
+After solving, `solution.metrics` contains statistics from the C++ solver:
+
+```python
+solution = solver.solve(instance, time_limit=30)
+
+print(solution.metrics)
+# {
+#     "NumberOfItems": 16,
+#     "ItemArea": 48000.0,
+#     "ItemProfit": 48000.0,
+#     "NumberOfBins": 1,
+#     "BinArea": 720000.0,
+#     "BinCost": 720000.0,
+#     "FullWaste": 672000.0,
+#     "FullWastePercentage": 93.33,
+#     "XMax": 1200.0,
+#     "YMax": 600.0,
+#     "DensityX": 0.067,
+#     "DensityY": 0.133,
+#     "LeftoverValue": 0.0,
+#     ...
+# }
+
+# Access individual metrics
+waste_pct = solution.metrics.get("FullWastePercentage", 0)
+density_x = solution.metrics.get("DensityX", 0)
 ```
 
 ### Export to DXF / SVG / other formats
