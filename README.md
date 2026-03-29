@@ -36,6 +36,24 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 | ![hole fill](img/test1_hole_fill.png) | ![custom holes](img/test2_custom_holes.png) | ![metal cutting](img/test3_metal_cutting.png) |
 | Filler placed inside frame hole | Frames, rings, discs & triangles | Plates, washers, brackets & gussets |
 
+### All Features — Example Results
+
+| # | Example | Preview |
+|:-:|---------|:-------:|
+| 1 | **BIN_PACKING** — fewest bins (rects, triangles, circles) | ![ex01](img/ex01_bin_packing.png) |
+| 2 | **KNAPSACK** — maximize profit | ![ex02](img/ex02_knapsack.png) |
+| 3 | **OPEN_DIMENSION_X** — minimize strip width, free rotation | ![ex03](img/ex03_strip_x.png) |
+| 4 | **OPEN_DIMENSION_Y** — minimize strip height | ![ex04](img/ex04_strip_y.png) |
+| 6 | **VARIABLE_SIZED_BIN_PACKING** — multi-size bins, min cost | ![ex06](img/ex06_variable_bins.png) |
+| 7 | **BIN_PACKING_WITH_LEFTOVERS** — leftover tracking | ![ex07](img/ex07_leftovers.png) |
+| 8 | **DEFECTS** — avoid scratch zones | ![ex08](img/ex08_defects.png) |
+| 9 | **POLYGON BIN** — hexagonal bin | ![ex09](img/ex09_polygon_bin.png) |
+| 10 | **HOLES & MIRRORING** — frames with holes, L-shapes | ![ex10](img/ex10_holes_mirror.png) |
+| 11 | **LP=Highs + ANCHOR** — post-processing | ![ex11](img/ex11_lp_anchor.png) |
+| 12 | **JSON ROUND-TRIP** — serialize → load → solve | ![ex12](img/ex12_json_roundtrip.png) |
+
+> **Note:** Example 5 (OPEN_DIMENSION_XY) is omitted — the C++ solver crashes on this objective in the current build.
+
 ---
 
 ## Quick Start
