@@ -707,12 +707,12 @@ name = "pyckingsolver"
 version = "0.1.6"
 source = { editable = "." }
 dependencies = [
-    { name = "matplotlib" },
     { name = "shapely" },
 ]
 
 [package.optional-dependencies]
 viz = [
+    { name = "matplotlib" },
     { name = "plotly" },
 ]
 
@@ -723,7 +723,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.8" },
     { name = "plotly", marker = "extra == 'viz'", specifier = ">=5.0" },
     { name = "shapely", specifier = ">=2.0" },
 ]

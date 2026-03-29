@@ -29,7 +29,6 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "matplotlib>=3.10.8",
     "shapely>=2.0",
 ]
 
@@ -41,7 +40,7 @@ Issues = "https://github.com/HamzaYslmn/pyckingsolver/issues"
 "Upstream C++ Solver" = "https://github.com/fontanf/packingsolver"
 
 [project.optional-dependencies]
-viz = ["plotly>=5.0"]
+viz = ["matplotlib>=3.8", "plotly>=5.0"]
 
 [build-system]
 requires = ["hatchling"]
