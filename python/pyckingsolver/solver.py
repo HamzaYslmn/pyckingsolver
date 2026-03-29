@@ -92,6 +92,8 @@ class Solver:
         use_sequential_value_correction: bool | None = None,
         use_column_generation: bool | None = None,
         use_dichotomic_search: bool | None = None,
+        # LP solver
+        linear_programming_solver: str | None = None,
         # Post-processing
         anchor_to_corner: bool | None = None,
         anchor_to_corner_corner: Corner | str | None = None,
@@ -131,6 +133,7 @@ class Solver:
             use_sequential_value_correction: Enable sequential value correction.
             use_column_generation: Enable column generation.
             use_dichotomic_search: Enable dichotomic search.
+            linear_programming_solver: LP solver name ("CLP" or "Highs").
             anchor_to_corner: Enable post-processing anchor step.
             anchor_to_corner_corner: Corner for anchoring (e.g. Corner.BOTTOM_LEFT).
             item_item_minimum_spacing: Override item-item spacing from CLI.
@@ -192,6 +195,11 @@ class Solver:
                               use_column_generation)
             _append_bool_flag(cmd, "--use-dichotomic-search",
                               use_dichotomic_search)
+
+            # LP solver
+            if linear_programming_solver is not None:
+                cmd += ["--linear-programming-solver",
+                        str(linear_programming_solver)]
 
             # Post-processing
             _append_bool_flag(cmd, "--anchor-to-corner", anchor_to_corner)
