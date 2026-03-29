@@ -166,7 +166,7 @@ class Solution:
         if sbin.shape is not None:
             data["shape"] = self._shape_to_elements(sbin.shape)
         if sbin.defects:
-            data["defects"] = [self._shape_with_holes_to_dict(defect) for defect in sbin.defects]
+            data["defects"] = [self._solution_shape_to_dict(defect) for defect in sbin.defects]
         if sbin.items:
             data["items"] = [self._item_to_dict(item) for item in sbin.items]
         data.update(deepcopy(sbin._extra))
@@ -186,17 +186,6 @@ class Solution:
         return data
 
     def _solution_shape_to_dict(self, shape: Polygon | MultiPolygon) -> dict[str, Any]:
-        polygon = self._as_polygon(shape)
-        data = {
-            "shape": self._ring_to_elements(polygon.exterior.coords),
-        }
-        if polygon.interiors:
-            data["holes"] = [
-                self._ring_to_elements(ring.coords) for ring in polygon.interiors
-            ]
-        return data
-
-    def _shape_with_holes_to_dict(self, shape: Polygon | MultiPolygon) -> dict[str, Any]:
         polygon = self._as_polygon(shape)
         data = {
             "shape": self._ring_to_elements(polygon.exterior.coords),

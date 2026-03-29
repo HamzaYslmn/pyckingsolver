@@ -37,5 +37,5 @@ __all__ = [
     "shapely_to_polygon_json", "circle_to_polygon",
 ]
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 __package_name__ = "pyckingsolver"

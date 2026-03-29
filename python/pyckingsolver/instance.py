@@ -374,6 +374,10 @@ class InstanceBuilder:
             Polygon([(0, 0), (width, 0), (width, height), (0, height)]), **kwargs
         )
 
+    def add_item_type_circle(self, radius: float, resolution: int = 64, **kwargs) -> int:
+        """Shorthand: add a circular item."""
+        return self.add_item_type(circle_to_polygon(radius, resolution=resolution), **kwargs)
+
     # MARK: Build
 
     def build(self) -> Instance:
