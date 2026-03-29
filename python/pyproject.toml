@@ -29,6 +29,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "matplotlib>=3.10.8",
     "shapely>=2.0",
 ]
 
