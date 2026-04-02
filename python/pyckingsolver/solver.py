@@ -88,6 +88,8 @@ class Solver:
         # Algorithm control
         optimization_mode: str | None = None,
         use_tree_search: bool | None = None,
+        use_local_search: bool | None = None,
+        use_milp_raster: bool | None = None,
         use_sequential_single_knapsack: bool | None = None,
         use_sequential_value_correction: bool | None = None,
         use_column_generation: bool | None = None,
@@ -95,14 +97,16 @@ class Solver:
         # LP solver
         linear_programming_solver: str | None = None,
         # Post-processing
-        anchor_to_corner: bool | None = None,
-        anchor_to_corner_corner: Corner | str | None = None,
+        anchor: bool | None = None,
+        anchor_x_weight: float | None = None,
+        anchor_y_weight: float | None = None,
         # Instance-level overrides (applied via CLI, not modifying the JSON)
         item_item_minimum_spacing: float | None = None,
         item_bin_minimum_spacing: float | None = None,
         leftover_corner: Corner | str | None = None,
         bin_unweighted: bool = False,
         unweighted: bool = False,
+        continuous_rotations: bool = False,
         # Misc
         seed: int | None = None,
         only_write_at_the_end: bool = False,
@@ -129,18 +133,22 @@ class Solver:
             optimization_mode: "Anytime", "NotAnytime",
                 "NotAnytimeDeterministic", or "NotAnytimeSequential".
             use_tree_search: Enable tree search algorithm.
+            use_local_search: Enable local search algorithm.
+            use_milp_raster: Enable MILP raster algorithm.
             use_sequential_single_knapsack: Enable sequential single knapsack.
             use_sequential_value_correction: Enable sequential value correction.
             use_column_generation: Enable column generation.
             use_dichotomic_search: Enable dichotomic search.
             linear_programming_solver: LP solver name ("CLP" or "Highs").
-            anchor_to_corner: Enable post-processing anchor step.
-            anchor_to_corner_corner: Corner for anchoring (e.g. Corner.BOTTOM_LEFT).
+            anchor: Enable post-processing anchor step.
+            anchor_x_weight: Horizontal slide weight (positive=left, negative=right, 0=off).
+            anchor_y_weight: Vertical slide weight (positive=bottom, negative=top, 0=off).
             item_item_minimum_spacing: Override item-item spacing from CLI.
             item_bin_minimum_spacing: Override item-bin spacing from CLI.
             leftover_corner: Override leftover corner from CLI.
             bin_unweighted: Set bin costs to their areas.
             unweighted: Set item profits to their areas.
+            continuous_rotations: Set all item types to continuous rotations.
             seed: Random seed (currently unused by solver).
             only_write_at_the_end: Only write output at program end.
             initial_maximum_approximation_ratio: Initial approx ratio (default 0.20).
@@ -187,6 +195,8 @@ class Solver:
             if optimization_mode is not None:
                 cmd += ["--optimization-mode", str(optimization_mode)]
             _append_bool_flag(cmd, "--use-tree-search", use_tree_search)
+            _append_bool_flag(cmd, "--use-local-search", use_local_search)
+            _append_bool_flag(cmd, "--use-milp-raster", use_milp_raster)
             _append_bool_flag(cmd, "--use-sequential-single-knapsack",
                               use_sequential_single_knapsack)
             _append_bool_flag(cmd, "--use-sequential-value-correction",
@@ -202,12 +212,11 @@ class Solver:
                         str(linear_programming_solver)]
 
             # Post-processing
-            _append_bool_flag(cmd, "--anchor-to-corner", anchor_to_corner)
-            if anchor_to_corner_corner is not None:
-                val = (anchor_to_corner_corner.value
-                       if isinstance(anchor_to_corner_corner, Corner)
-                       else str(anchor_to_corner_corner))
-                cmd += ["--anchor-to-corner-corner", val]
+            _append_bool_flag(cmd, "--anchor", anchor)
+            if anchor_x_weight is not None:
+                cmd += ["--anchor-x-weight", str(anchor_x_weight)]
+            if anchor_y_weight is not None:
+                cmd += ["--anchor-y-weight", str(anchor_y_weight)]
 
             # Instance-level overrides
             if item_item_minimum_spacing is not None:
@@ -225,6 +234,8 @@ class Solver:
                 cmd.append("--bin-unweighted")
             if unweighted:
                 cmd.append("--unweighted")
+            if continuous_rotations:
+                cmd.append("--continuous-rotations")
 
             # Misc
             if seed is not None:

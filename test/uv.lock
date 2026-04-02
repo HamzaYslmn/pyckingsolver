@@ -54,15 +54,22 @@ wheels = [
 
 [[package]]
 name = "pyckingsolver"
-version = "0.1.6"
-source = { registry = "https://pypi.org/simple" }
+version = "0.1.7"
+source = { editable = "../python" }
 dependencies = [
     { name = "shapely" },
 ]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/45/b0/ca64268b8fea875ac5b051d6e2c1f9d77abcb81b27a5c69a2325f44d9b49/pyckingsolver-0.1.6-py3-none-manylinux_2_35_x86_64.whl", hash = "sha256:2ca1cc15987a732b376a003f21e58549f232f14d282e2b8063026a9cf7e44449", size = 4443810, upload-time = "2026-03-29T11:26:13.203Z" },
-    { url = "https://files.pythonhosted.org/packages/e3/d7/79ec1d3ed54b3581b781f130209837721ab738cabd48902634063a7e0119/pyckingsolver-0.1.6-py3-none-win_amd64.whl", hash = "sha256:2322cc5dc079a99fd0962b1a683316f685ffa0263d04d2527b9710dbec96f052", size = 2601033, upload-time = "2026-03-29T11:26:15Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.8" },
+    { name = "plotly", marker = "extra == 'viz'", specifier = ">=5.0" },
+    { name = "shapely", specifier = ">=2.0" },
 ]
+provides-extras = ["viz"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pymupdf", specifier = ">=1.27.2" }]
 
 [[package]]
 name = "pymupdf"
@@ -134,6 +141,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pyckingsolver", specifier = ">=0.1.6" },
+    { name = "pyckingsolver", editable = "../python" },
     { name = "pymupdf", specifier = ">=1.27.2.2" },
 ]

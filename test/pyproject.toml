@@ -5,6 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "pyckingsolver>=0.1.6",
+    "pyckingsolver>=0.1.7",
     "pymupdf>=1.27.2.2",
 ]
+
+[tool.uv.sources]
+pyckingsolver = { path = "../python", editable = true }

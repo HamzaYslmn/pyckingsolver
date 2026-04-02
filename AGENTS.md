@@ -1,7 +1,7 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `167dd88`).
+C++ submodule pinned at `extern/packingsolver` (commit `3a21735`).
 
 ---
 
@@ -62,18 +62,22 @@ All 10 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 | `verbosity_level` | ✅ | ✅ | |
 | `optimization_mode` | ✅ | ✅ | Anytime / NotAnytime / etc. |
 | `use_tree_search` | ✅ | ✅ | |
+| `use_local_search` | ✅ | ✅ | NEW — local search algorithm |
+| `use_milp_raster` | ✅ | ✅ | NEW — MILP raster algorithm |
 | `use_sequential_single_knapsack` | ✅ | ✅ | |
 | `use_sequential_value_correction` | ✅ | ✅ | |
 | `use_column_generation` | ✅ | ✅ | |
 | `use_dichotomic_search` | ✅ | ✅ | |
 | `linear_programming_solver` | ✅ | ✅ | "CLP" or "Highs" |
-| `anchor_to_corner` | ✅ | ✅ | Post-processing |
-| `anchor_to_corner_corner` | ✅ | ✅ | Corner enum |
+| `anchor` | ✅ | ✅ | Post-processing (renamed from `anchor_to_corner`) |
+| `anchor_x_weight` | ✅ | ✅ | Horizontal slide weight (+left, -right, 0=off) |
+| `anchor_y_weight` | ✅ | ✅ | Vertical slide weight (+bottom, -top, 0=off) |
 | `item_item_minimum_spacing` (CLI override) | ✅ | ✅ | |
 | `item_bin_minimum_spacing` (CLI override) | ✅ | ✅ | |
 | `leftover_corner` (CLI override) | ✅ | ✅ | |
 | `bin_unweighted` | ✅ | ✅ | |
 | `unweighted` | ✅ | ✅ | |
+| `continuous_rotations` | ✅ | ✅ | NEW — set all items to continuous rotation |
 | `seed` | ✅ | ✅ | Currently unused by solver |
 | `only_write_at_the_end` | ✅ | ✅ | |
 | All tuning params (approx ratio, queue sizes, etc.) | ✅ | ✅ | 9 tuning knobs |

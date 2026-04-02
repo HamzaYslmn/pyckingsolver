@@ -275,8 +275,9 @@ def ex11():
     sol = _solver.solve(
         b.build(), time_limit=10,
         linear_programming_solver="Highs",
-        anchor_to_corner=True,
-        anchor_to_corner_corner=Corner.BOTTOM_LEFT,
+        anchor=True,
+        anchor_x_weight=1.0,
+        anchor_y_weight=1.0,
     )
     bins_geom = [Polygon([(0, 0), (200, 0), (200, 150), (0, 150)])]
     _render("ex11_lp_anchor", sol, bins_geom,
