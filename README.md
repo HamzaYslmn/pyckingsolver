@@ -423,14 +423,15 @@ solution = solver.solve(
 
 ### Post-Processing
 
-Anchor items to a specific corner after solving:
+Anchor items towards a corner by sliding them as close as possible without overlapping:
 
 ```python
 solution = solver.solve(
     instance,
     time_limit=60,
-    anchor_to_corner=True,
-    anchor_to_corner_corner=Corner.BOTTOM_LEFT,
+    anchor=True,
+    anchor_x_weight=1.0,   # positive=left, negative=right, 0=off
+    anchor_y_weight=1.0,   # positive=bottom, negative=top, 0=off
 )
 ```
 
