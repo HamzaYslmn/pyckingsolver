@@ -274,6 +274,7 @@ class Solver:
             result = subprocess.run(
                 cmd, capture_output=True, text=True,
                 timeout=time_limit + 30,
+                cwd=tmpdir,  # contain any debug files (e.g. tmp.json)
             )
 
             if result.returncode != 0:
