@@ -110,8 +110,6 @@ class Solver:
         # Misc
         seed: int | None = None,
         only_write_at_the_end: bool = False,
-        # Resource limits
-        number_of_threads: int | None = None,
         # Algorithm tuning
         initial_maximum_approximation_ratio: float | None = None,
         maximum_approximation_ratio_factor: float | None = None,
@@ -153,7 +151,6 @@ class Solver:
             continuous_rotations: Set all item types to continuous rotations.
             seed: Random seed (currently unused by solver).
             only_write_at_the_end: Only write output at program end.
-            number_of_threads: Limit threads for underlying LP solver (HIGHS/OpenMP).
             initial_maximum_approximation_ratio: Initial approx ratio (default 0.20).
             maximum_approximation_ratio_factor: Approx ratio factor (default 0.75).
             sequential_value_correction_subproblem_queue_size: Queue size (default 128).
@@ -274,41 +271,11 @@ class Solver:
             # Forward-compat: extra CLI arguments
             cmd.extend(extra_args or [])
 
-            # MARK: CPU affinity wrapper for thread limiting
-            # packingsolver uses std::thread internally — env vars don't work.
-            # Use OS-level CPU affinity to limit cores.
-            import os as _os
-            import platform
-            sub_env = _os.environ.copy()    # Always copy env for isolation
-            final_cmd: list[str] = cmd
-
-            if number_of_threads is not None and number_of_threads > 0:
-                system = platform.system()
-                if system == "Linux":
-                    # taskset limits CPU affinity on Linux (Docker included)
-                    # -c 0-N means use CPUs 0 through N (N+1 cores total)
-                    mask = f"0-{number_of_threads - 1}"
-                    final_cmd = ["taskset", "-c", mask] + cmd
-                elif system == "Windows":
-                    # On Windows, use subprocess.CREATE_NO_WINDOW + set affinity
-                    # via ctypes after process starts. See _run_with_affinity().
-                    pass  # handled separately below
-                else:
-                    # macOS / other: no easy taskset equivalent
-                    pass
-
-            # Windows affinity requires special handling with ctypes
-            if (number_of_threads is not None and number_of_threads > 0
-                    and platform.system() == "Windows"):
-                result = _run_with_affinity_windows(
-                    cmd, number_of_threads, sub_env, tmpdir, time_limit + 30)
-            else:
-                result = subprocess.run(
-                    final_cmd, capture_output=True, text=True,
-                    timeout=time_limit + 30,
-                    cwd=tmpdir,
-                    env=sub_env,
-                )
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                timeout=time_limit + 30,
+                cwd=tmpdir,  # contain any debug files (e.g. tmp.json)
+            )
 
             if result.returncode != 0:
                 raise RuntimeError(
@@ -340,107 +307,6 @@ class Solver:
 
 
 # MARK: - Helpers
-
-def _run_with_affinity_windows(
-    cmd: list[str],
-    number_of_threads: int,
-    env: dict[str, str],
-    cwd: str,
-    timeout: float,
-) -> subprocess.CompletedProcess:
-    """Run subprocess with CPU affinity on Windows using ctypes."""
-    import ctypes
-    from ctypes import wintypes
-
-    kernel32 = ctypes.windll.kernel32
-
-    # Create job object to limit CPU affinity for process tree
-    job_handle = kernel32.CreateJobObjectW(None, None)
-    if not job_handle:
-        # Fall back to regular subprocess
-        return subprocess.run(
-            cmd, capture_output=True, text=True,
-            timeout=timeout, cwd=cwd, env=env
-        )
-
-    try:
-        # JOBOBJECT_BASIC_LIMIT_INFORMATION structure
-        class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
-            _fields_ = [
-                ("PerProcessUserTimeLimit", ctypes.c_int64),
-                ("PerJobUserTimeLimit", ctypes.c_int64),
-                ("LimitFlags", wintypes.DWORD),
-                ("MinimumWorkingSetSize", ctypes.c_size_t),
-                ("MaximumWorkingSetSize", ctypes.c_size_t),
-                ("ActiveProcessLimit", wintypes.DWORD),
-                ("Affinity", ctypes.c_size_t),
-                ("PriorityClass", wintypes.DWORD),
-                ("SchedulingClass", wintypes.DWORD),
-            ]
-
-        JOB_OBJECT_LIMIT_AFFINITY = 0x00000010
-        JobObjectBasicLimitInformation = 2
-
-        affinity_mask = (1 << number_of_threads) - 1
-        limit_info = JOBOBJECT_BASIC_LIMIT_INFORMATION()
-        limit_info.LimitFlags = JOB_OBJECT_LIMIT_AFFINITY
-        limit_info.Affinity = affinity_mask
-
-        kernel32.SetInformationJobObject(
-            job_handle,
-            JobObjectBasicLimitInformation,
-            ctypes.byref(limit_info),
-            ctypes.sizeof(limit_info)
-        )
-
-        # Start process suspended, assign to job, then resume
-        CREATE_SUSPENDED = 0x00000004
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=cwd,
-            env=env,
-            creationflags=CREATE_SUSPENDED,
-        )
-
-        kernel32.AssignProcessToJobObject(job_handle, int(proc._handle))  # type: ignore
-        kernel32.ResumeThread(
-            kernel32.OpenThread(0x0002, False, proc.pid)  # THREAD_SUSPEND_RESUME
-        )
-
-        # Actually we need to resume the main thread. Use NtResumeProcess
-        # For simplicity, let's use a different approach: start normally
-        # and set affinity immediately
-    finally:
-        kernel32.CloseHandle(job_handle)
-
-    # Simpler approach: start process normally and set affinity immediately
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=cwd,
-        env=env,
-    )
-
-    try:
-        # Set process affinity mask using SetProcessAffinityMask
-        affinity_mask = (1 << number_of_threads) - 1
-        handle = int(proc._handle)  # type: ignore
-        kernel32.SetProcessAffinityMask(handle, affinity_mask)
-
-        stdout, stderr = proc.communicate(timeout=timeout)
-        return subprocess.CompletedProcess(
-            args=cmd,
-            returncode=proc.returncode,
-            stdout=stdout.decode("utf-8", errors="replace") if stdout else "",
-            stderr=stderr.decode("utf-8", errors="replace") if stderr else "",
-        )
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        raise
-
 
 def _append_bool_flag(cmd: list[str], flag: str, value: bool | None) -> None:
     """Append a ``--flag 1`` or ``--flag 0`` pair when *value* is not None."""
