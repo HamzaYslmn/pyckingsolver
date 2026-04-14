@@ -110,6 +110,8 @@ class Solver:
         # Misc
         seed: int | None = None,
         only_write_at_the_end: bool = False,
+        # Resource limits
+        number_of_threads: int | None = None,
         # Algorithm tuning
         initial_maximum_approximation_ratio: float | None = None,
         maximum_approximation_ratio_factor: float | None = None,
@@ -151,6 +153,7 @@ class Solver:
             continuous_rotations: Set all item types to continuous rotations.
             seed: Random seed (currently unused by solver).
             only_write_at_the_end: Only write output at program end.
+            number_of_threads: Limit threads for underlying LP solver (HIGHS/OpenMP).
             initial_maximum_approximation_ratio: Initial approx ratio (default 0.20).
             maximum_approximation_ratio_factor: Approx ratio factor (default 0.75).
             sequential_value_correction_subproblem_queue_size: Queue size (default 128).
@@ -271,10 +274,19 @@ class Solver:
             # Forward-compat: extra CLI arguments
             cmd.extend(extra_args or [])
 
+            # MARK: Build subprocess environment with optional thread limit
+            import os as _os
+            sub_env = None
+            if number_of_threads is not None and number_of_threads > 0:
+                sub_env = _os.environ.copy()
+                sub_env["HIGHS_NUM_THREADS"] = str(number_of_threads)
+                sub_env["OMP_NUM_THREADS"] = str(number_of_threads)
+
             result = subprocess.run(
                 cmd, capture_output=True, text=True,
                 timeout=time_limit + 30,
                 cwd=tmpdir,  # contain any debug files (e.g. tmp.json)
+                env=sub_env,
             )
 
             if result.returncode != 0:
