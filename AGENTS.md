@@ -53,7 +53,7 @@ C++ submodule pinned at `extern/packingsolver` (commit `3a21735`).
 | `scale_value` | ❌ | ✅ | Auto-computed in C++ `build()`, not in JSON |
 
 ### Objectives
-All 10 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_WITH_LEFTOVERS`, `OPEN_DIMENSION_X`, `OPEN_DIMENSION_Y`, `OPEN_DIMENSION_Z`, `OPEN_DIMENSION_XY`, `VARIABLE_SIZED_BIN_PACKING`, `SEQUENTIAL_ONEDIMENSIONAL_RECTANGLE_SUBPROBLEM`.
+All 11 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_WITH_LEFTOVERS`, `OPEN_DIMENSION_X`, `OPEN_DIMENSION_Y`, `OPEN_DIMENSION_Z`, `OPEN_DIMENSION_XY`, `VARIABLE_SIZED_BIN_PACKING`, `SEQUENTIAL_ONEDIMENSIONAL_RECTANGLE_SUBPROBLEM`, `FEASIBILITY`.
 
 ### Solver CLI Parameters
 | Parameter | Python | C++ CLI | Notes |
@@ -64,6 +64,10 @@ All 10 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 | `use_tree_search` | ✅ | ✅ | |
 | `use_local_search` | ✅ | ✅ | NEW — local search algorithm |
 | `use_milp_raster` | ✅ | ✅ | NEW — MILP raster algorithm |
+| `use_sequential_feasibility` | ✅ | ✅ | NEW — sequential feasibility algorithm |
+| `sequential_feasibility_use_tree_search` | ✅ | ✅ | NEW — sub-problem control |
+| `sequential_feasibility_use_local_search` | ✅ | ✅ | NEW — sub-problem control |
+| `sequential_feasibility_use_milp_raster` | ✅ | ✅ | NEW — sub-problem control |
 | `use_sequential_single_knapsack` | ✅ | ✅ | |
 | `use_sequential_value_correction` | ✅ | ✅ | |
 | `use_column_generation` | ✅ | ✅ | |
@@ -80,6 +84,7 @@ All 10 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 | `continuous_rotations` | ✅ | ✅ | NEW — set all items to continuous rotation |
 | `seed` | ✅ | ✅ | Currently unused by solver |
 | `only_write_at_the_end` | ✅ | ✅ | |
+| `group_identical_bins` | ✅ | ✅ | NEW — post-processing to merge identical bins |
 | All tuning params (approx ratio, queue sizes, etc.) | ✅ | ✅ | 9 tuning knobs |
 | `extra_args` | ✅ | — | Forward-compat escape hatch |
 | `max_cores` | ✅ | — | CPU affinity limit (Linux/Docker/Windows) |

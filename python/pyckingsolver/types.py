@@ -34,6 +34,7 @@ class Objective(str, enum.Enum):
     SEQUENTIAL_ONEDIMENSIONAL_RECTANGLE_SUBPROBLEM = (
         "sequential-onedimensional-rectangle-subproblem"
     )
+    FEASIBILITY = "feasibility"
 
     @classmethod
     def _missing_(cls, value: object):
@@ -73,6 +74,7 @@ _OBJECTIVE_ALIASES: dict[str, str] = {
     "SequentialOneDimensionalRectangleSubproblem":
         "sequential-onedimensional-rectangle-subproblem",
     "BDRS": "sequential-onedimensional-rectangle-subproblem",
+    "Feasibility": "feasibility",
 }
 
 
