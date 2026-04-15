@@ -13,8 +13,7 @@ from pyckingsolver import Instance, InstanceBuilder, Objective, Solution
 
 # MARK: - Paths
 
-_ROOT = Path(__file__).resolve().parents[1]           # python/
-_REPO = _ROOT.parent                                  # pyckingsolver/
+_REPO = Path(__file__).resolve().parents[1]            # pyckingsolver/
 _SOLVER_DIR = _REPO / "extern" / "packingsolver"      # C++ submodule
 _DATA = _SOLVER_DIR / "data" / "irregular"
 _OUT = Path(__file__).resolve().parent
