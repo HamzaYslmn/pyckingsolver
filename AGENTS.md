@@ -82,6 +82,7 @@ All 10 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 | `only_write_at_the_end` | ✅ | ✅ | |
 | All tuning params (approx ratio, queue sizes, etc.) | ✅ | ✅ | 9 tuning knobs |
 | `extra_args` | ✅ | — | Forward-compat escape hatch |
+| `max_cores` | ✅ | — | CPU affinity limit (Linux/Docker/Windows) |
 
 ### C++ Internal-Only (NOT exposed as CLI)
 These exist in `OptimizeParameters` but have **no CLI flag** — cannot be set from Python:
