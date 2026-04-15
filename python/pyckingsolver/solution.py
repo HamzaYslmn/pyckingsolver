@@ -100,6 +100,8 @@ class Solution:
     def from_json(cls, path: str | Path) -> Solution:
         """Load a solution from a JSON file."""
         data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if data is None:
+            return cls([], _raw=None)
         return cls.from_dict(data)
 
     # MARK: Serialization

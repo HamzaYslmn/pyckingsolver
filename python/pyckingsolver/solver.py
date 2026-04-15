@@ -66,7 +66,8 @@ class Solver:
         # 3) Local build / submodule build
         for root in (pkg_root, repo_root, submodule):
             for suffix in (f"{name}.exe", name):
-                for subdir in ("install/bin", "build/src/irregular"):
+                for subdir in ("install/bin", "build/src/irregular",
+                               "build/src/irregular/Release"):
                     candidate = root / subdir / suffix
                     if candidate.exists():
                         return candidate
@@ -98,6 +99,10 @@ class Solver:
         use_sequential_value_correction: bool | None = None,
         use_column_generation: bool | None = None,
         use_dichotomic_search: bool | None = None,
+        use_sequential_feasibility: bool | None = None,
+        sequential_feasibility_use_tree_search: bool | None = None,
+        sequential_feasibility_use_local_search: bool | None = None,
+        sequential_feasibility_use_milp_raster: bool | None = None,
         # LP solver
         linear_programming_solver: str | None = None,
         # Post-processing
@@ -113,6 +118,7 @@ class Solver:
         continuous_rotations: bool = False,
         # Misc
         seed: int | None = None,
+        group_identical_bins: bool = False,
         only_write_at_the_end: bool = False,
         # Algorithm tuning
         initial_maximum_approximation_ratio: float | None = None,
@@ -146,6 +152,10 @@ class Solver:
             use_sequential_value_correction: Enable sequential value correction.
             use_column_generation: Enable column generation.
             use_dichotomic_search: Enable dichotomic search.
+            use_sequential_feasibility: Enable sequential feasibility algorithm.
+            sequential_feasibility_use_tree_search: Enable tree search in SF sub-problems.
+            sequential_feasibility_use_local_search: Enable local search in SF sub-problems.
+            sequential_feasibility_use_milp_raster: Enable MILP raster in SF sub-problems.
             linear_programming_solver: LP solver name ("CLP" or "Highs").
             anchor: Enable post-processing anchor step.
             anchor_x_weight: Horizontal slide weight (positive=left, negative=right, 0=off).
@@ -157,6 +167,7 @@ class Solver:
             unweighted: Set item profits to their areas.
             continuous_rotations: Set all item types to continuous rotations.
             seed: Random seed (currently unused by solver).
+            group_identical_bins: Post-processing to merge identical bins.
             only_write_at_the_end: Only write output at program end.
             initial_maximum_approximation_ratio: Initial approx ratio (default 0.20).
             maximum_approximation_ratio_factor: Approx ratio factor (default 0.75).
@@ -215,6 +226,14 @@ class Solver:
                               use_column_generation)
             _append_bool_flag(cmd, "--use-dichotomic-search",
                               use_dichotomic_search)
+            _append_bool_flag(cmd, "--use-sequential-feasibility",
+                              use_sequential_feasibility)
+            _append_bool_flag(cmd, "--sequential-feasibility-use-tree-search",
+                              sequential_feasibility_use_tree_search)
+            _append_bool_flag(cmd, "--sequential-feasibility-use-local-search",
+                              sequential_feasibility_use_local_search)
+            _append_bool_flag(cmd, "--sequential-feasibility-use-milp-raster",
+                              sequential_feasibility_use_milp_raster)
 
             # LP solver
             if linear_programming_solver is not None:
@@ -250,6 +269,8 @@ class Solver:
             # Misc
             if seed is not None:
                 cmd += ["--seed", str(seed)]
+            if group_identical_bins:
+                cmd.append("--group-identical-bins")
             if only_write_at_the_end:
                 cmd.append("--only-write-at-the-end")
 
@@ -307,9 +328,18 @@ class Solver:
                 )
 
             if result.returncode != 0:
+                # Debug: save crash input for investigation
+                crash_dir = Path.home() / ".pyckingsolver_crash"
+                crash_dir.mkdir(exist_ok=True)
+                crash_file = crash_dir / f"crash_{result.returncode}.json"
+                try:
+                    shutil.copy(input_path, crash_file)
+                except Exception:
+                    pass
                 raise RuntimeError(
                     f"Solver failed (exit {result.returncode}):\n"
                     f"{result.stderr or result.stdout}"
+                    + (f"\nCrash input saved to: {crash_file}" if crash_file.exists() else "")
                 )
 
             if not sol_path.exists():
