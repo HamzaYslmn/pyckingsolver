@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -85,6 +87,8 @@ class Solver:
         json_output: str | Path | None = None,
         output_path: str | Path | None = None,
         extra_args: list[str] | None = None,
+        # CPU limiting
+        max_cores: int | None = None,
         # Algorithm control
         optimization_mode: str | None = None,
         use_tree_search: bool | None = None,
@@ -130,6 +134,9 @@ class Solver:
             json_output: Optional path to persist the parsed solution JSON.
             output_path: Backward-compatible alias for ``json_output``.
             extra_args: Additional CLI arguments for the solver.
+            max_cores: Limit CPU usage to this many cores (positive int).
+                None = use all available cores (native behaviour).
+                Works on Linux, Docker, and Windows via OS-level CPU affinity.
             optimization_mode: "Anytime", "NotAnytime",
                 "NotAnytimeDeterministic", or "NotAnytimeSequential".
             use_tree_search: Enable tree search algorithm.
@@ -163,6 +170,9 @@ class Solver:
         """
         if json_output is not None and output_path is not None:
             raise ValueError("Pass only one of 'json_output' or 'output_path'.")
+        if max_cores is not None:
+            if not isinstance(max_cores, int) or max_cores < 1:
+                raise ValueError("max_cores must be a positive integer")
 
         export_path = Path(json_output) if json_output is not None else (
             Path(output_path) if output_path is not None else None
@@ -271,11 +281,30 @@ class Solver:
             # Forward-compat: extra CLI arguments
             cmd.extend(extra_args or [])
 
-            result = subprocess.run(
-                cmd, capture_output=True, text=True,
-                timeout=time_limit + 30,
-                cwd=tmpdir,  # contain any debug files (e.g. tmp.json)
-            )
+            # MARK: Run solver (with optional CPU limiting)
+            if max_cores is not None:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, cwd=tmpdir,
+                )
+                _set_cpu_affinity(proc.pid, max_cores)
+                try:
+                    stdout, stderr = proc.communicate(
+                        timeout=time_limit + 30,
+                    )
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                    raise
+                result = subprocess.CompletedProcess(
+                    cmd, proc.returncode, stdout, stderr,
+                )
+            else:
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True,
+                    timeout=time_limit + 30,
+                    cwd=tmpdir,
+                )
 
             if result.returncode != 0:
                 raise RuntimeError(
@@ -335,3 +364,54 @@ def _parse_metrics(raw: dict[str, Any]) -> dict[str, Any]:
         if key not in metrics:
             metrics[key] = value
     return metrics
+
+
+# MARK: CPU Affinity
+
+def _set_cpu_affinity(pid: int, max_cores: int) -> None:
+    """Limit process *pid* to at most *max_cores* CPU cores.
+
+    - **Linux / Docker**: ``os.sched_setaffinity`` (picks first N available CPUs).
+    - **Windows**: ``kernel32.SetProcessAffinityMask`` via ctypes.
+    - **macOS / other**: silently skipped (no OS-level affinity API).
+    """
+    if sys.platform == "win32":
+        _set_cpu_affinity_windows(pid, max_cores)
+    elif hasattr(os, "sched_setaffinity"):
+        # Linux (native or Docker container)
+        available = sorted(os.sched_getaffinity(0))
+        target = set(available[:max_cores])
+        os.sched_setaffinity(pid, target)
+    # else: unsupported (macOS) — no-op
+
+
+def _set_cpu_affinity_windows(pid: int, max_cores: int) -> None:
+    """Set CPU affinity on Windows via kernel32."""
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+
+    # Access rights: PROCESS_QUERY_INFORMATION | PROCESS_SET_INFORMATION
+    handle = kernel32.OpenProcess(0x0600, False, pid)
+    if not handle:
+        return
+    try:
+        proc_mask = ctypes.c_size_t()
+        sys_mask = ctypes.c_size_t()
+        ok = kernel32.GetProcessAffinityMask(
+            handle, ctypes.byref(proc_mask), ctypes.byref(sys_mask),
+        )
+        if not ok:
+            return
+
+        # Pick first *max_cores* bits from system mask
+        available_bits = [
+            i for i in range(64) if sys_mask.value & (1 << i)
+        ]
+        new_mask = 0
+        for bit in available_bits[:max_cores]:
+            new_mask |= 1 << bit
+
+        kernel32.SetProcessAffinityMask(handle, new_mask)
+    finally:
+        kernel32.CloseHandle(handle)
