@@ -1,7 +1,7 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `3a21735`).
+C++ submodule pinned at `extern/packingsolver` (commit `c8d107f`).
 
 ---
 
@@ -123,6 +123,76 @@ python/pyckingsolver/
 - **Angles**: Degrees everywhere (C++ JSON input/output, Shapely rotation).
 - **Shapes**: Shapely `Polygon` with interior rings for holes; `MultiPolygon` for multi-part.
 - **Binary search**: `Solver._find_binary()` checks bundled bin/, PATH, submodule build paths.
+- **Crash recovery**: On non-zero exit, saves input JSON to `~/.pyckingsolver_crash/crash_{code}.json`.
+
+---
+
+## MARK: Key API Patterns
+
+### Cost Defaults
+- `BinType.cost = -1.0` → solver uses **area as cost** automatically.  
+  Don't pass `cost=w*h` manually — let the solver optimize natively.
+- `ItemType.profit = -1.0` → solver uses **area as profit** (for KNAPSACK).
+
+### Copies (Identical Items)
+```python
+# BAD: one item type per copy
+for gi in gis:
+    b.add_item_type(poly, copies=1)  # N item types → slow
+
+# GOOD: group identical items, one type with copies=N
+b.add_item_type(poly, copies=N)  # 1 item type → fast
+```
+Group by `poly.wkb` to detect identical shapes.
+
+### Spacing Strategy (C++ inflate crash workaround)
+C++ `inflate()` crashes on complex shapes with holes + non-zero spacing.  
+**Fix**: Pre-apply spacing in Python via `poly.buffer(spacing).buffer(0)`, pass `spacing=0` to C++.  
+`inflate(shape, 0.0)` returns identity (offset.cpp line 187-188).
+
+### Hole-Aware Nesting
+For items with holes where smaller items should nest inside:
+- Use **half-buffer** (`spacing/2`) so holes shrink less, remain accessible
+- Keep holes via `min_hole_area=0` in prep
+- Try hole-aware first → fallback to hole-stripped
+
+---
+
+## MARK: Known Binary Bugs
+
+- `group_identical_bins=True` was crashing — **FIXED** in solver.py. C++ expects `--group-identical-bins 1` (value required), not bare flag.
+- `inflate()` crashes on complex shapes with holes + non-zero spacing — always pre-buffer in Python.
+
+---
+
+## MARK: Solver Tuning
+
+### Optimization Modes
+| Mode | Behavior | Use When |
+|---|---|---|
+| `Anytime` (default) | Progressive: queue 1→∞, improves over time | Default for VSBP |
+| `NotAnytime` | Single pass, queue=512 | Quick result, hole-aware |
+| `NotAnytimeDeterministic` | Same, deterministic | Reproducible results |
+| `NotAnytimeSequential` | Single-threaded | Debugging / crash avoidance |
+
+### Algorithm Auto-Selection (VSBP)
+- Many copies + many items → `sequential_single_knapsack`
+- Few copies + many items → `SSK` + `dichotomic_search`
+- Few copies + few items → `tree_search` + `SVC` + `column_generation`
+
+### Speed Levers
+1. Group identical items via `copies=N` (critical)
+2. `NotAnytime` mode (single pass)
+3. Limit rotations: `[(0,0),(90,90)]` not continuous
+4. `anchor=False` (skip LP post-processing)
+5. Pre-buffer spacing in Python → `spacing=0` to C++
+
+### Quality Levers
+1. `Anytime` mode (progressive improvement)
+2. `anchor=True` with `anchor_x_weight=1.0, anchor_y_weight=1.0`
+3. More time → larger queue sizes in Anytime
+4. `linear_programming_solver="Highs"` (better LP)
+5. Continuous rotations `[(0,360)]` (if acceptable)
 
 ---
 
