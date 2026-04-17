@@ -6,5 +6,6 @@ __pycache__
 # Python package artifacts
 python/.venv/
 python/packingsolver/bin/
+python/pyckingsolver/_crashes/
 python/test/_tmp_*
 python/test/*.png
