@@ -162,6 +162,8 @@ For items with holes where smaller items should nest inside:
 
 - `group_identical_bins=True` was crashing — **FIXED** in solver.py. C++ expects `--group-identical-bins 1` (value required), not bare flag.
 - `inflate()` crashes on complex shapes with holes + non-zero spacing — always pre-buffer in Python.
+- `--anchor 0` still **enables** anchor — **FIXED** in solver.py. C++ `main.cpp` uses `vm.count("anchor")` (presence only), not the value. Python now only passes `--anchor 1` when enabled, omits flag otherwise.
+- Anchor post-processing (`linear_programming.cpp`) throws `std::logic_error("violated separation constraint")` on many real inputs → process exits 0xC00000FD. Leave `anchor=False` for production packing.
 
 ---
 
