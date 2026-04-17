@@ -16,6 +16,18 @@ from pyckingsolver.solution import Solution
 from pyckingsolver.types import Corner
 
 
+# MARK: Process tracking hook — external code can register a callback to track Popen instances
+# (e.g. for cancellation). Called with (proc, "add") and (proc, "remove").
+_process_hook = None
+
+
+def set_process_hook(hook):
+    """Set a callback invoked as hook(proc, 'add'|'remove') for all Popen instances.
+    Used by cancellation systems."""
+    global _process_hook
+    _process_hook = hook
+
+
 # MARK: - Solver
 
 class Solver:
@@ -270,7 +282,7 @@ class Solver:
             if seed is not None:
                 cmd += ["--seed", str(seed)]
             if group_identical_bins:
-                cmd.append("--group-identical-bins")
+                cmd += ["--group-identical-bins", "1"]
             if only_write_at_the_end:
                 cmd.append("--only-write-at-the-end")
 
@@ -302,24 +314,10 @@ class Solver:
             # Forward-compat: extra CLI arguments
             cmd.extend(extra_args or [])
 
-            # MARK: Run solver (with optional CPU limiting)
+            # MARK: Run solver (race-free CPU limiting via pre-exec affinity)
             if max_cores is not None:
-                proc = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    text=True, cwd=tmpdir,
-                )
-                _set_cpu_affinity(proc.pid, max_cores)
-                try:
-                    stdout, stderr = proc.communicate(
-                        timeout=time_limit + 30,
-                    )
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.communicate()
-                    raise
-                result = subprocess.CompletedProcess(
-                    cmd, proc.returncode, stdout, stderr,
-                )
+                result = _run_with_affinity(cmd, tmpdir, max_cores,
+                                            time_limit + 30)
             else:
                 result = subprocess.run(
                     cmd, capture_output=True, text=True,
@@ -396,52 +394,161 @@ def _parse_metrics(raw: dict[str, Any]) -> dict[str, Any]:
     return metrics
 
 
-# MARK: CPU Affinity
+# MARK: CPU Affinity (race-free)
 
-def _set_cpu_affinity(pid: int, max_cores: int) -> None:
-    """Limit process *pid* to at most *max_cores* CPU cores.
+def _run_with_affinity(
+    cmd: list[str], cwd: str, max_cores: int, timeout: float,
+) -> subprocess.CompletedProcess:
+    """Run *cmd* with CPU affinity applied **before** any child thread starts.
 
-    - **Linux / Docker**: ``os.sched_setaffinity`` (picks first N available CPUs).
-    - **Windows**: ``kernel32.SetProcessAffinityMask`` via ctypes.
-    - **macOS / other**: silently skipped (no OS-level affinity API).
+    - **Windows**: start suspended, set affinity, resume via ``NtResumeProcess``.
+    - **Linux**: set affinity in ``preexec_fn`` (between fork and exec).
+    - **macOS / other**: no affinity API — runs unrestricted.
     """
     if sys.platform == "win32":
-        _set_cpu_affinity_windows(pid, max_cores)
-    elif hasattr(os, "sched_setaffinity"):
-        # Linux (native or Docker container)
-        available = sorted(os.sched_getaffinity(0))
-        target = set(available[:max_cores])
-        os.sched_setaffinity(pid, target)
-    # else: unsupported (macOS) — no-op
+        return _run_with_affinity_windows(cmd, cwd, max_cores, timeout)
+    if hasattr(os, "sched_setaffinity"):
+        return _run_with_affinity_posix(cmd, cwd, max_cores, timeout)
+    # macOS / unsupported — fall back to plain run
+    return subprocess.run(
+        cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd,
+    )
 
 
-def _set_cpu_affinity_windows(pid: int, max_cores: int) -> None:
-    """Set CPU affinity on Windows via kernel32."""
+def _run_with_affinity_posix(
+    cmd: list[str], cwd: str, max_cores: int, timeout: float,
+) -> subprocess.CompletedProcess:
+    """Linux: apply affinity in preexec_fn so all child threads inherit."""
+    available = sorted(os.sched_getaffinity(0))
+    target = set(available[:max_cores])
+
+    def _preexec() -> None:
+        try:
+            os.sched_setaffinity(0, target)
+        except OSError as e:
+            print(f"[pyckingsolver] sched_setaffinity failed: {e}",
+                  file=sys.stderr)
+
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, cwd=cwd, preexec_fn=_preexec,
+    )
+    if _process_hook is not None:
+        try:
+            _process_hook(proc, "add")
+        except Exception:
+            pass
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise
+    finally:
+        if _process_hook is not None:
+            try:
+                _process_hook(proc, "remove")
+            except Exception:
+                pass
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+def _run_with_affinity_windows(
+    cmd: list[str], cwd: str, max_cores: int, timeout: float,
+) -> subprocess.CompletedProcess:
+    """Windows: CREATE_SUSPENDED → SetProcessAffinityMask → NtResumeProcess."""
     import ctypes
+    from ctypes import wintypes
+
+    CREATE_SUSPENDED = 0x00000004
+    PROCESS_ALL_ACCESS = 0x1F0FFF
+
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, cwd=cwd,
+        creationflags=CREATE_SUSPENDED,
+    )
+    if _process_hook is not None:
+        try:
+            _process_hook(proc, "add")
+        except Exception:
+            pass
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    ntdll = ctypes.WinDLL("ntdll", use_last_error=True)  # type: ignore[attr-defined]
 
-    # Access rights: PROCESS_QUERY_INFORMATION | PROCESS_SET_INFORMATION
-    handle = kernel32.OpenProcess(0x0600, False, pid)
-    if not handle:
-        return
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetProcessAffinityMask.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(ctypes.c_size_t),
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    kernel32.GetProcessAffinityMask.restype = wintypes.BOOL
+    kernel32.SetProcessAffinityMask.argtypes = [wintypes.HANDLE, ctypes.c_size_t]
+    kernel32.SetProcessAffinityMask.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
+    ntdll.NtResumeProcess.restype = ctypes.c_long  # NTSTATUS
+
+    handle = kernel32.OpenProcess(PROCESS_ALL_ACCESS, False, proc.pid)
+    resumed = False
     try:
-        proc_mask = ctypes.c_size_t()
-        sys_mask = ctypes.c_size_t()
-        ok = kernel32.GetProcessAffinityMask(
-            handle, ctypes.byref(proc_mask), ctypes.byref(sys_mask),
-        )
-        if not ok:
-            return
+        if not handle:
+            err = ctypes.get_last_error()
+            print(f"[pyckingsolver] OpenProcess failed (err={err}); "
+                  f"running unrestricted", file=sys.stderr)
+        else:
+            # MARK: Compute mask from first N bits of system affinity mask
+            proc_mask = ctypes.c_size_t()
+            sys_mask = ctypes.c_size_t()
+            if kernel32.GetProcessAffinityMask(
+                handle, ctypes.byref(proc_mask), ctypes.byref(sys_mask),
+            ):
+                bits = [i for i in range(ctypes.sizeof(ctypes.c_size_t) * 8)
+                        if sys_mask.value & (1 << i)]
+                new_mask = 0
+                for bit in bits[:max_cores]:
+                    new_mask |= 1 << bit
+                if new_mask and not kernel32.SetProcessAffinityMask(
+                    handle, new_mask,
+                ):
+                    err = ctypes.get_last_error()
+                    print(f"[pyckingsolver] SetProcessAffinityMask failed "
+                          f"(err={err}); running unrestricted",
+                          file=sys.stderr)
+            else:
+                err = ctypes.get_last_error()
+                print(f"[pyckingsolver] GetProcessAffinityMask failed "
+                      f"(err={err}); running unrestricted", file=sys.stderr)
 
-        # Pick first *max_cores* bits from system mask
-        available_bits = [
-            i for i in range(64) if sys_mask.value & (1 << i)
-        ]
-        new_mask = 0
-        for bit in available_bits[:max_cores]:
-            new_mask |= 1 << bit
-
-        kernel32.SetProcessAffinityMask(handle, new_mask)
+            # MARK: Resume ALL threads via NtResumeProcess (must always run)
+            status = ntdll.NtResumeProcess(handle)
+            resumed = (status == 0)
+            if not resumed:
+                print(f"[pyckingsolver] NtResumeProcess failed "
+                      f"(NTSTATUS=0x{status & 0xFFFFFFFF:08x})",
+                      file=sys.stderr)
     finally:
-        kernel32.CloseHandle(handle)
+        if handle:
+            kernel32.CloseHandle(handle)
+        # Safety net: if we never resumed, kill to avoid hang
+        if not resumed:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise
+    finally:
+        if _process_hook is not None:
+            try:
+                _process_hook(proc, "remove")
+            except Exception:
+                pass
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
