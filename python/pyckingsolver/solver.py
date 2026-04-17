@@ -304,18 +304,22 @@ class Solver:
             )
 
             if result.returncode != 0:
-                # Debug: save crash input for investigation
-                crash_dir = Path.home() / ".pyckingsolver_crash"
-                crash_dir.mkdir(exist_ok=True)
-                crash_file = crash_dir / f"crash_{result.returncode}.json"
+                # Try to save crash input for debugging — INSIDE the package
+                # (within venv → cleaned with venv). Read-only filesystems are
+                # tolerated silently: never write to user home, never crash.
+                crash_file: Path | None = None
+                pkg_crash_dir = Path(__file__).resolve().parent / "_crashes"
                 try:
-                    shutil.copy(input_path, crash_file)
-                except Exception:
-                    pass
+                    pkg_crash_dir.mkdir(exist_ok=True)
+                    candidate = pkg_crash_dir / f"crash_{result.returncode}.json"
+                    shutil.copy(input_path, candidate)
+                    crash_file = candidate
+                except OSError:
+                    pass  # read-only fs / permission denied — skip dump
                 raise RuntimeError(
                     f"Solver failed (exit {result.returncode}):\n"
                     f"{result.stderr or result.stdout}"
-                    + (f"\nCrash input saved to: {crash_file}" if crash_file.exists() else "")
+                    + (f"\nCrash input saved to: {crash_file}" if crash_file else "")
                 )
 
             if not sol_path.exists():
