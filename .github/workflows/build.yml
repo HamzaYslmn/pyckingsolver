@@ -5,6 +5,9 @@ on:
     tags: ["v*"]
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 # MARK: - Build wheels for Win x64, Linux x64, Linux ARM64 (RPi),
 #         and macOS ARM64 (Apple Silicon).
 #
