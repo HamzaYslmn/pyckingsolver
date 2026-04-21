@@ -29,6 +29,23 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.2.0 (Breaking)
+
+- **`AllowedRotation` is now a dataclass** with `(start_angle, end_angle, mirror)` matching upstream. Mirror is now **per-rotation** instead of a separate item-level flag, so you can mix mirrored and non-mirrored ranges:
+  ```python
+  allowed_rotations=[(0, 0, False), (90, 90, True)]   # 0° normal + 90° mirrored
+  ```
+  The legacy `(start, end)` 2-tuple form and `allow_mirroring=True` keyword still work for back-compat — `allow_mirroring=True` duplicates each rotation entry with `mirror=True`.
+- **`FixedItem` support** — pre-place items the solver must pack around, via `InstanceBuilder.add_fixed_item(bin_id, item_id, (x, y), angle=, mirror=)`. See [Fixed Items](#fixed-items) below.
+- **`SolverParams` dataclass** groups all 30+ solver knobs into one passable object. Kwargs to `Solver.solve()` still work for ad-hoc calls.
+- **`nest()` high-level helper** — pack a flat list of Shapely shapes onto bins in one call, with optional spacing pre-buffer and shape grouping. See [Quick Nest](#quick-nest) below.
+- **`Solution.metrics`** is populated from the solver's output JSON (BinCost, FullWastePercentage, DensityX, …).
+- **`json_output=`** replaces the old `output_path=` kwarg on `Solver.solve()`.
+- The bundled binary is rebuilt against upstream commit `98daf10` (2026-04-19), which adds free rotations for large items, restores the `lost` filter on missing items, and supports PNG export.
+- Removed `_extra` forward-compat dicts from `Parameters`, `SolutionItem`, `SolutionBin` — they were unused.
+
+---
+
 ## Gallery
 
 | Hole Fill | Custom Holes & Rings | Metal Cutting |
@@ -158,22 +175,59 @@ b.add_item_type([shape_a, shape_b], copies=2)
 
 ### Rotations
 
+The `allowed_rotations` parameter accepts several shapes — each entry maps to one upstream `AllowedRotation { start_angle, end_angle, mirror }` record:
+
 ```python
-# Fixed (no rotation) — default
-b.add_item_type(shape, allowed_rotations=[(0, 0)])
+from pyckingsolver import AllowedRotation
 
-# 90° increments
-b.add_item_type(shape, allowed_rotations=[(0,0),(90,90),(180,180),(270,270)])
+# Fixed at 0° (default if omitted)
+b.add_item_type(shape)
 
-# Any custom discrete angles
-b.add_item_type(shape, allowed_rotations=[(0,0),(45,45),(90,90)])
+# Discrete angles (mirror=False each)
+b.add_item_type(shape, allowed_rotations=[0, 90, 180, 270])
+
+# 2-tuples — continuous ranges, mirror=False
+b.add_item_type(shape, allowed_rotations=[(0, 0), (90, 90)])
+
+# 3-tuples — full triple form (start, end, mirror)
+b.add_item_type(shape, allowed_rotations=[(0, 0, False), (90, 90, True)])
 
 # Free continuous rotation
 b.add_item_type(shape, allowed_rotations=[(0, 360)])
 
-# Mirroring
+# AllowedRotation dataclass directly
+b.add_item_type(shape, allowed_rotations=[AllowedRotation(0, 360, False),
+                                          AllowedRotation(0, 360, True)])
+
+# Back-compat: duplicate every entry with mirror=True
 b.add_item_type(shape, allow_mirroring=True)
 ```
+
+### Fixed Items
+
+Pre-place an item that the solver must pack around. Applies to **every bin**
+of the chosen `BinType`:
+
+```python
+b = InstanceBuilder(Objective.BIN_PACKING)
+bin_id  = b.add_bin_type_rectangle(1200, 600)
+plate_id = b.add_item_type_rectangle(200, 100)        # "plate" item type
+b.add_item_type_rectangle(80, 60, copies=20)          # parts to pack
+
+# Lock one plate at (50, 50) on every bin of this type
+b.add_fixed_item(bin_id, plate_id, (50, 50), angle=0, mirror=False)
+
+solution = Solver().solve(b.build(), time_limit=30)
+
+# Identify the locked items in the solution (set by the wrapper post-parse)
+for it in solution.all_items():
+    if it.is_fixed:
+        print("locked at", it.x, it.y)
+```
+
+> **Caveat:** the C++ solver's JSON output does not currently emit the
+> `is_fixed` flag. The wrapper reconstructs it by matching each placement
+> against the bin's `fixed_items` list (`Solution.mark_fixed_items()`).
 
 ### Spacing
 
@@ -382,9 +436,33 @@ solution = solver.solve(
     instance,
     time_limit=60,              # seconds
     verbosity_level=1,          # 0=quiet, 1=summary, 2=verbose
-    output_path="sol.json",     # optional: persist solution JSON
+    json_output="sol.json",     # optional: persist solution JSON
 )
 ```
+
+### SolverParams Dataclass
+
+For reusable configurations and IDE autocomplete, build a `SolverParams`
+dataclass once and pass it to `solver.solve(...)`:
+
+```python
+from pyckingsolver import Solver, SolverParams
+
+params = SolverParams(
+    time_limit=120,
+    verbosity_level=1,
+    optimization_mode="Anytime",
+    use_tree_search=True,
+    item_item_minimum_spacing=2.0,
+    anchor=True,
+    anchor_x_weight=1.0,
+)
+
+for instance in batch:
+    sol = Solver().solve(instance, params=params)
+```
+
+Keyword arguments to `solve()` always override fields of `params`.
 
 ### Algorithm Control
 
@@ -452,6 +530,50 @@ solution = solver.solve(
 ```
 
 ### Forward-Compatible Extra Args
+
+Unknown CLI flags can still be passed via `extra_args=["--my-flag", "value"]`
+(field of `SolverParams`).
+
+---
+
+## Quick Nest
+
+For the common "pack this list of Shapely polygons" use case, `nest()` wraps
+the builder + solver into one call and adds three quality-of-life features:
+
+1. **Spacing pre-buffer** — each item is inflated by `spacing/2` (Shapely buffer)
+   so the C++ solver only has to enforce no-overlap. This avoids a known
+   crash with `--item-item-minimum-spacing` on dense inputs. Set
+   `pre_buffer=False` to use the C++ flag instead.
+2. **Identical-shape grouping** — duplicate Shapely polygons are collapsed
+   into one `ItemType` with a `copies` count (compared via WKB).
+3. **Origin anchoring** — every input is translated to its bottom-left
+   corner before being added to the instance.
+
+```python
+from shapely.geometry import box, Polygon
+from pyckingsolver import nest, Objective
+
+shapes = [box(0, 0, 80, 60) for _ in range(20)]
+shapes += [Polygon([(0,0), (50,0), (25,40)]) for _ in range(8)]
+
+sol = nest(
+    shapes,
+    bins=(1200, 600),                 # or a Polygon, or a list of either
+    objective=Objective.BIN_PACKING,
+    spacing=2.0,                      # 2mm kerf, applied via pre-buffer
+    allowed_rotations=[(0, 0), (90, 90)],
+    bin_copies=10,
+    time_limit=30,
+)
+
+for it in sol.all_items():
+    poly = sol.placed_shapes(it)[0]   # already mirrored/rotated/translated
+    print(it.item_type_id, poly.bounds)
+```
+
+`nest()` accepts the same keyword arguments as `Solver.solve()` (e.g.
+`time_limit`, `params=SolverParams(...)`, `json_output`).
 
 Pass any CLI flag directly for new solver features:
 
