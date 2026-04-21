@@ -62,7 +62,7 @@ jobs:
       working-directory: extern/packingsolver
       run: |
         cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPACKINGSOLVER_BUILD_TEST=OFF -DPACKINGSOLVER_USE_CLP=OFF
-        cmake --build build --target packingsolver_irregular --parallel
+        cmake --build build --target PackingSolver_irregular_main --parallel
 
     - name: Bundle solver binary into the Python package
       shell: bash
