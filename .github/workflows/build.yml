@@ -5,51 +5,39 @@ on:
     tags: ["v*"]
   pull_request:
 
+# MARK: - Build wheels for Win x64, Linux x64, Linux ARM64 (RPi),
+#         and macOS ARM64 (Apple Silicon).
+#
+# Notes:
+# - We disable CLP everywhere because the upstream prebuilt is x86_64-only
+#   (breaks ARM linking) and HiGHS is the default LP solver anyway.
+# - We skip C++ unit tests for speed.
+# - Ninja keeps the build fast and uniform across all platforms.
+# - Wheels are retagged after build to declare their platform.
 jobs:
-
-  # MARK: - Build platform wheels
-  # Targets:
-  #   - Windows x64 (Intel/AMD)        : windows-latest, Ninja+MSVC for speed
-  #   - Linux   x64 (Intel/AMD)        : ubuntu-latest
-  #   - Linux   arm64 (RPi 4/5, ARM64) : ubuntu-24.04-arm
-  #   - macOS   arm64 (M1/M2/M3 chips) : macos-14
-  #   - macOS   x86_64 (Intel)         : macos-13
   build-wheel:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Windows AMD/Intel
-          - os: windows-latest
-            platform-tag: win_amd64
-            binary-name: packingsolver_irregular.exe
-          # Linux AMD/Intel
-          - os: ubuntu-latest
-            platform-tag: manylinux_2_35_x86_64
-            binary-name: packingsolver_irregular
-          # Linux ARM64 (Raspberry Pi 4/5, AWS Graviton, etc.)
-          - os: ubuntu-24.04-arm
-            platform-tag: manylinux_2_35_aarch64
-            binary-name: packingsolver_irregular
-          # macOS Apple Silicon (M1/M2/M3)
-          - os: macos-14
-            platform-tag: macosx_11_0_arm64
-            binary-name: packingsolver_irregular
+          - { os: windows-latest,  tag: win_amd64,                bin: packingsolver_irregular.exe }
+          - { os: ubuntu-latest,   tag: manylinux_2_35_x86_64,    bin: packingsolver_irregular     }
+          - { os: ubuntu-24.04-arm,tag: manylinux_2_35_aarch64,   bin: packingsolver_irregular     }
+          - { os: macos-14,        tag: macosx_11_0_arm64,        bin: packingsolver_irregular     }
 
     steps:
     - uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      with: { submodules: recursive }
 
     - uses: astral-sh/setup-uv@v5
 
-    # MARK: - System deps
-    - name: Install system dependencies (Linux)
+    # System deps (LAPACK/BZ2 for Linux; Ninja everywhere)
+    - name: Install Ninja + system deps (Linux)
       if: runner.os == 'Linux'
-      run: sudo apt-get update && sudo apt-get -y install liblapack-dev libbz2-dev ninja-build
+      run: sudo apt-get update && sudo apt-get -y install ninja-build liblapack-dev libbz2-dev
 
-    - name: Install system dependencies (macOS)
+    - name: Install Ninja (macOS)
       if: runner.os == 'macOS'
       run: brew install ninja
 
@@ -57,92 +45,57 @@ jobs:
       if: runner.os == 'Windows'
       uses: seanmiddleditch/gha-setup-ninja@v5
 
-    # MSVC env so Ninja can find cl.exe on Windows runners
+    # Make MSVC visible to Ninja on Windows
     - name: Set up MSVC (Windows)
       if: runner.os == 'Windows'
       uses: ilammy/msvc-dev-cmd@v1
 
-    # MARK: - Cache build directory (huge speedup on incremental rebuilds)
+    # Cache the C++ build (keyed on solver sources) for fast incremental CI
     - name: Cache CMake build
       uses: actions/cache@v4
       with:
         path: extern/packingsolver/build
         key: pkgsolver-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('extern/packingsolver/**/CMakeLists.txt', 'extern/packingsolver/**/*.cpp', 'extern/packingsolver/**/*.hpp') }}
-        restore-keys: |
-          pkgsolver-${{ runner.os }}-${{ runner.arch }}-
+        restore-keys: pkgsolver-${{ runner.os }}-${{ runner.arch }}-
 
-    # MARK: - Build C++ solver with Ninja (single-config, fast)
-    # Notes:
-    #   - PACKINGSOLVER_BUILD_TEST=OFF skips unit tests (huge speedup).
-    #   - PACKINGSOLVER_USE_CLP=OFF disables the CLP LP backend, whose
-    #     bundled binary is x86_64-only and breaks linking on Linux/macOS
-    #     ARM. HiGHS (built from source for the host arch) remains the
-    #     default LP solver.
-    - name: Build C++ solver
+    - name: Configure & build C++ solver (Ninja, Release, irregular only)
       working-directory: extern/packingsolver
-      shell: bash
       run: |
-        case "${{ runner.arch }}" in
-          ARM64|aarch64) USE_CLP=OFF ;;
-          *)             USE_CLP=ON  ;;
-        esac
-        cmake -S . -B build -G Ninja \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DPACKINGSOLVER_BUILD_TEST=OFF \
-              -DPACKINGSOLVER_USE_CLP=$USE_CLP
+        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPACKINGSOLVER_BUILD_TEST=OFF -DPACKINGSOLVER_USE_CLP=OFF
         cmake --build build --target packingsolver_irregular --parallel
 
-    # MARK: - Bundle solver binary into the Python package
-    - name: Bundle solver binary (Unix)
-      if: runner.os != 'Windows'
+    - name: Bundle solver binary into the Python package
+      shell: bash
       run: |
         mkdir -p python/pyckingsolver/bin
-        cp extern/packingsolver/build/src/irregular/${{ matrix.binary-name }} \
-           python/pyckingsolver/bin/
+        cp "extern/packingsolver/build/src/irregular/${{ matrix.bin }}" python/pyckingsolver/bin/
 
-    - name: Bundle solver binary (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        New-Item -ItemType Directory -Path python/pyckingsolver/bin -Force | Out-Null
-        Copy-Item extern/packingsolver/build/src/irregular/${{ matrix.binary-name }} `
-                   python/pyckingsolver/bin/
-
-    # MARK: - Build wheel and retag with platform
     - name: Build wheel
       working-directory: python
       run: uv build --wheel -o ../dist
 
-    - name: Tag wheel with platform (Unix)
-      if: runner.os != 'Windows'
-      run: uvx wheel tags --remove --platform-tag ${{ matrix.platform-tag }} dist/$(ls dist)
-
-    - name: Tag wheel with platform (Windows)
-      if: runner.os == 'Windows'
+    - name: Tag wheel with platform
+      shell: bash
       run: |
-        $whl = (Get-ChildItem dist\*.whl).Name
-        uvx wheel tags --remove --platform-tag ${{ matrix.platform-tag }} dist\$whl
+        whl=$(ls dist/*.whl)
+        uvx wheel tags --remove --platform-tag ${{ matrix.tag }} "$whl"
 
     - uses: actions/upload-artifact@v4
       with:
         name: wheel-${{ matrix.os }}-${{ runner.arch }}
         path: dist/*.whl
 
-  # MARK: - Publish to PyPI
+  # MARK: - Publish to PyPI on tag push
   publish:
     needs: build-wheel
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
-    permissions:
-      id-token: write
+    permissions: { id-token: write }
     steps:
     - uses: actions/download-artifact@v4
-      with:
-        path: dist
-        merge-multiple: true
+      with: { path: dist, merge-multiple: true }
 
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        packages-dir: dist
+    - uses: pypa/gh-action-pypi-publish@release/v1
+      with: { packages-dir: dist }
 # __PYCK_END__
