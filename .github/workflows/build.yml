@@ -72,11 +72,25 @@ jobs:
           pkgsolver-${{ runner.os }}-${{ runner.arch }}-
 
     # MARK: - Build C++ solver with Ninja (single-config, fast)
+    # Notes:
+    #   - PACKINGSOLVER_BUILD_TEST=OFF skips unit tests (huge speedup).
+    #   - PACKINGSOLVER_USE_CLP=OFF disables the CLP LP backend, whose
+    #     bundled binary is x86_64-only and breaks linking on Linux/macOS
+    #     ARM. HiGHS (built from source for the host arch) remains the
+    #     default LP solver.
     - name: Build C++ solver
       working-directory: extern/packingsolver
+      shell: bash
       run: |
-        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-        cmake --build build --parallel
+        case "${{ runner.arch }}" in
+          ARM64|aarch64) USE_CLP=OFF ;;
+          *)             USE_CLP=ON  ;;
+        esac
+        cmake -S . -B build -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DPACKINGSOLVER_BUILD_TEST=OFF \
+              -DPACKINGSOLVER_USE_CLP=$USE_CLP
+        cmake --build build --target packingsolver_irregular --parallel
 
     # MARK: - Bundle solver binary into the Python package
     - name: Bundle solver binary (Unix)
