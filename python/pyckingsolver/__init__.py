@@ -1,41 +1,44 @@
-"""PackingSolver — Python interface with Shapely geometry support.
+"""pyckingsolver — Python wrapper for the C++ packingsolver (irregular).
 
-Usage:
-    from pyckingsolver import Instance, InstanceBuilder, Objective, Solver
+See README.md for usage. v0.2.0 introduces breaking API changes.
 """
 
-from pyckingsolver.types import (
-    Objective,
-    Corner,
-    ItemShape,
-    ItemType,
-    BinType,
-    Defect,
-    Parameters,
-    SolutionItem,
-    SolutionBin,
+from pyckingsolver.geometry import (
+    circle_polygon,
+    elements_to_polygon,
+    rectangle_polygon,
+    shape_from_json,
+    shape_to_json,
 )
 from pyckingsolver.instance import Instance, InstanceBuilder
+from pyckingsolver.nest import nest
 from pyckingsolver.solution import Solution
-from pyckingsolver.solver import Solver
-from pyckingsolver.geometry import (
-    elements_to_shapely,
-    json_shape_to_shapely,
-    shapely_to_polygon_json,
-    circle_to_polygon,
+from pyckingsolver.solver import Solver, SolverParams
+from pyckingsolver.types import (
+    AllowedRotation,
+    BinType,
+    Corner,
+    Defect,
+    FixedItem,
+    ItemShape,
+    ItemType,
+    Objective,
+    Parameters,
+    SolutionBin,
+    SolutionItem,
 )
 
-__all__ = [
-    # Core types
-    "Objective", "Corner", "Parameters",
-    "BinType", "Defect", "ItemShape", "ItemType",
-    "SolutionItem", "SolutionBin",
-    # Main API
-    "Instance", "InstanceBuilder", "Solution", "Solver",
-    # Geometry helpers
-    "elements_to_shapely", "json_shape_to_shapely",
-    "shapely_to_polygon_json", "circle_to_polygon",
-]
+__version__ = "0.2.0"
 
-__version__ = "0.1.16"
-__package_name__ = "pyckingsolver"
+__all__ = [
+    "__version__",
+    "Objective", "Corner", "AllowedRotation",
+    "Defect", "FixedItem", "BinType", "ItemShape", "ItemType",
+    "Parameters", "SolutionItem", "SolutionBin",
+    "Instance", "InstanceBuilder", "Solution",
+    "Solver", "SolverParams",
+    "nest",
+    "shape_from_json", "shape_to_json", "elements_to_polygon",
+    "circle_polygon", "rectangle_polygon",
+]
+# __PYCK_END__

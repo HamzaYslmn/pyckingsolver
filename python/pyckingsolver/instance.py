@@ -1,8 +1,4 @@
-"""Instance definition and builder for PackingSolver problems.
-
-Forward-compatible: unknown JSON fields are preserved via ``_extra`` dicts
-on each type, so new C++ solver features survive Python round-trips.
-"""
+"""Instance + InstanceBuilder for the irregular packing problem."""
 
 from __future__ import annotations
 
@@ -12,379 +8,404 @@ from typing import Any
 
 from shapely.geometry import Polygon
 
-from pyckingsolver.types import (
-    Objective,
-    Corner,
-    Parameters,
-    BinType,
-    Defect,
-    ItemType,
-    ItemShape,
-)
 from pyckingsolver.geometry import (
-    json_shape_to_shapely,
-    json_shape_with_holes_to_shapely,
-    shapely_to_polygon_json,
-    circle_to_polygon,
+    circle_polygon,
+    rectangle_polygon,
+    shape_from_json,
+    shape_to_json,
+)
+from pyckingsolver.types import (
+    AllowedRotation,
+    BinType,
+    Corner,
+    Defect,
+    FixedItem,
+    ItemShape,
+    ItemType,
+    Objective,
+    Parameters,
 )
 
-# Known keys per JSON section — anything else goes into _extra
-_PARAM_KEYS = {"item_item_minimum_spacing", "open_dimension_xy_aspect_ratio",
-               "leftover_corner", "quality_rules"}
-_BIN_KEYS = {"type", "radius", "width", "height", "vertices", "elements",
-             "cost", "copies", "copies_min", "item_bin_minimum_spacing", "defects"}
-_DEFECT_KEYS = {"type", "radius", "width", "height", "vertices", "elements",
-                "holes", "defect_type", "item_defect_minimum_spacing"}
-_ITEM_KEYS = {"type", "radius", "width", "height", "vertices", "elements",
-              "holes", "shapes", "profit", "copies", "allowed_rotations",
-              "allow_mirroring", "quality_rule"}
-_ISHAPE_KEYS = {"type", "radius", "width", "height", "vertices", "elements",
-                "holes", "quality_rule"}
-
-
-def _collect_extra(data: dict, known: set) -> dict:
-    """Return keys from *data* not in *known*."""
-    return {k: v for k, v in data.items() if k not in known}
-
-
-# MARK: - Instance
 
 class Instance:
-    """An immutable packing problem instance."""
+    """Immutable problem definition. Build via `InstanceBuilder`."""
 
-    def __init__(
-        self,
-        objective: Objective,
-        bin_types: list[BinType],
-        item_types: list[ItemType],
-        parameters: Parameters | None = None,
-        _extra: dict[str, Any] | None = None,
-    ):
+    def __init__(self, objective: Objective, bin_types: list[BinType],
+                 item_types: list[ItemType], parameters: Parameters | None = None):
         self.objective = objective
         self.bin_types = list(bin_types)
         self.item_types = list(item_types)
         self.parameters = parameters or Parameters()
-        self._extra = _extra or {}
-
-    # MARK: Serialization
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to a dict matching the packingsolver JSON schema."""
-        d: dict[str, Any] = {"objective": self.objective.value}
+        out: dict[str, Any] = {"objective": self.objective.value}
+        params = _params_to_dict(self.parameters)
+        if params:
+            out["parameters"] = params
+        out["bin_types"] = [_bin_to_dict(b) for b in self.bin_types]
+        out["item_types"] = [_item_to_dict(it) for it in self.item_types]
+        return out
 
-        # Parameters
-        pd = self._params_to_dict()
-        if pd:
-            d["parameters"] = pd
-
-        d["bin_types"] = [self._bin_to_dict(b) for b in self.bin_types]
-        d["item_types"] = [self._item_to_dict(it) for it in self.item_types]
-
-        # Preserve unknown top-level fields
-        d.update(self._extra)
-        return d
-
-    def to_json(self, path: str | Path | None = None, **kwargs) -> str:
-        """Serialize to JSON string. Optionally write to *path*."""
-        text = json.dumps(self.to_dict(), indent=4, **kwargs)
+    def to_json(self, path: str | Path | None = None) -> str:
+        text = json.dumps(self.to_dict(), indent=2)
         if path is not None:
             Path(path).write_text(text, encoding="utf-8")
         return text
 
-    # MARK: Deserialization
-
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Instance:
-        """Create an Instance from a dict (parsed JSON).
-
-        Unknown fields are stored in ``_extra`` for round-trip fidelity.
-        """
-        objective = Objective(data["objective"])
-
-        # Parameters
-        params = Parameters()
-        if "parameters" in data:
-            jp = data["parameters"]
-            params.item_item_minimum_spacing = jp.get("item_item_minimum_spacing", 0.0)
-            params.open_dimension_xy_aspect_ratio = jp.get("open_dimension_xy_aspect_ratio", -1.0)
-            if "leftover_corner" in jp:
-                params.leftover_corner = Corner(jp["leftover_corner"])
-            params.quality_rules = jp.get("quality_rules", [])
-            params._extra = _collect_extra(jp, _PARAM_KEYS)
-
-        # Bin types
-        bin_types = [cls._parse_bin(jb) for jb in data.get("bin_types", [])]
-
-        # Item types
-        item_types = [cls._parse_item(ji) for ji in data.get("item_types", [])]
-
-        top_extra = _collect_extra(data, {"objective", "parameters", "bin_types", "item_types"})
-        return cls(objective, bin_types, item_types, params, top_extra)
+        return cls(
+            objective=Objective(data["objective"]),
+            bin_types=[_bin_from_dict(b) for b in data.get("bin_types", [])],
+            item_types=[_item_from_dict(i) for i in data.get("item_types", [])],
+            parameters=_params_from_dict(data.get("parameters", {})),
+        )
 
     @classmethod
     def from_json(cls, path: str | Path) -> Instance:
-        """Load an Instance from a JSON file."""
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
-    # MARK: Internal — parsing
-
-    @classmethod
-    def _parse_bin(cls, jb: dict) -> BinType:
-        bt = BinType(
-            shape=json_shape_to_shapely(jb),
-            cost=jb.get("cost", -1.0),
-            copies=jb.get("copies", 1),
-            copies_min=jb.get("copies_min", 0),
-            item_bin_minimum_spacing=jb.get("item_bin_minimum_spacing", 0.0),
-            defects=[cls._parse_defect(jd) for jd in jb.get("defects", [])],
-            _extra=_collect_extra(jb, _BIN_KEYS),
-        )
-        return bt
-
-    @classmethod
-    def _parse_defect(cls, jd: dict) -> Defect:
-        return Defect(
-            shape=json_shape_with_holes_to_shapely(jd),
-            defect_type=jd.get("defect_type", -1),
-            item_defect_minimum_spacing=jd.get("item_defect_minimum_spacing", 0.0),
-            _extra=_collect_extra(jd, _DEFECT_KEYS),
-        )
-
-    @classmethod
-    def _parse_item(cls, ji: dict) -> ItemType:
-        if "shapes" in ji:
-            shapes = [cls._parse_ishape(js) for js in ji["shapes"]]
-        else:
-            shapes = [cls._parse_ishape(ji)]
-
-        rotations = [(0.0, 0.0)]
-        if "allowed_rotations" in ji:
-            rotations = [(r["start"], r["end"]) for r in ji["allowed_rotations"]]
-
-        return ItemType(
-            shapes=shapes,
-            profit=ji.get("profit", -1.0),
-            copies=ji.get("copies", 1),
-            allowed_rotations=rotations,
-            allow_mirroring=ji.get("allow_mirroring", False),
-            _extra=_collect_extra(ji, _ITEM_KEYS),
-        )
-
-    @classmethod
-    def _parse_ishape(cls, js: dict) -> ItemShape:
-        return ItemShape(
-            shape=json_shape_with_holes_to_shapely(js),
-            quality_rule=js.get("quality_rule", -1),
-            _extra=_collect_extra(js, _ISHAPE_KEYS),
-        )
-
-    # MARK: Internal — serialization
-
-    def _params_to_dict(self) -> dict[str, Any]:
-        p = self.parameters
-        pd: dict[str, Any] = {}
-        if p.item_item_minimum_spacing != 0.0:
-            pd["item_item_minimum_spacing"] = p.item_item_minimum_spacing
-        if p.open_dimension_xy_aspect_ratio > 0:
-            pd["open_dimension_xy_aspect_ratio"] = p.open_dimension_xy_aspect_ratio
-        if p.leftover_corner != Corner.BOTTOM_LEFT:
-            pd["leftover_corner"] = p.leftover_corner.value
-        if p.quality_rules:
-            pd["quality_rules"] = p.quality_rules
-        pd.update(p._extra)
-        return pd
-
-    @staticmethod
-    def _shape_dict(shape: Polygon) -> dict[str, Any]:
-        """Single shape → JSON, including Shapely interior holes."""
-        return shapely_to_polygon_json(shape)
-
-    def _bin_to_dict(self, bt: BinType) -> dict[str, Any]:
-        d = self._shape_dict(bt.shape)
-        if bt.cost != -1.0:
-            d["cost"] = bt.cost
-        if bt.copies != 1:
-            d["copies"] = bt.copies
-        if bt.copies_min != 0:
-            d["copies_min"] = bt.copies_min
-        if bt.item_bin_minimum_spacing != 0.0:
-            d["item_bin_minimum_spacing"] = bt.item_bin_minimum_spacing
-        if bt.defects:
-            d["defects"] = [self._defect_to_dict(df) for df in bt.defects]
-        d.update(bt._extra)
-        return d
-
-    def _defect_to_dict(self, df: Defect) -> dict[str, Any]:
-        d = self._shape_dict(df.shape)
-        if df.defect_type != -1:
-            d["defect_type"] = df.defect_type
-        if df.item_defect_minimum_spacing != 0.0:
-            d["item_defect_minimum_spacing"] = df.item_defect_minimum_spacing
-        d.update(df._extra)
-        return d
-
-    def _ishape_to_dict(self, ishape: ItemShape) -> dict[str, Any]:
-        d = self._shape_dict(ishape.shape)
-        if ishape.quality_rule != -1:
-            d["quality_rule"] = ishape.quality_rule
-        d.update(ishape._extra)
-        return d
-
-    def _item_to_dict(self, it: ItemType) -> dict[str, Any]:
-        if len(it.shapes) == 1:
-            d = self._ishape_to_dict(it.shapes[0])
-        else:
-            d: dict[str, Any] = {"shapes": [self._ishape_to_dict(s) for s in it.shapes]}
-        if it.profit != -1.0:
-            d["profit"] = it.profit
-        if it.copies != 1:
-            d["copies"] = it.copies
-        if it.allowed_rotations != [(0.0, 0.0)]:
-            d["allowed_rotations"] = [{"start": s, "end": e} for s, e in it.allowed_rotations]
-        if it.allow_mirroring:
-            d["allow_mirroring"] = True
-        d.update(it._extra)
-        return d
-
     def __repr__(self) -> str:
-        return (
-            f"Instance(objective={self.objective.value!r}, "
-            f"bins={len(self.bin_types)}, items={len(self.item_types)})"
-        )
+        return (f"Instance(objective={self.objective.value!r}, "
+                f"bins={len(self.bin_types)}, items={len(self.item_types)})")
 
-
-# MARK: - InstanceBuilder
 
 class InstanceBuilder:
-    """Fluent builder for creating packing instances with Shapely geometry."""
+    """Fluent builder. Mirrors the upstream `InstanceBuilder` C++ class.
+
+    `add_bin(...)` and `add_item(...)` accept a Shapely Polygon, a `(w, h)`
+    tuple, or a numeric radius and dispatch to the right concrete adder.
+    """
 
     def __init__(self, objective: Objective | str = Objective.BIN_PACKING):
-        if isinstance(objective, str):
-            objective = Objective(objective)
-        self._objective = objective
-        self._bin_types: list[BinType] = []
-        self._item_types: list[ItemType] = []
-        self._parameters = Parameters()
-
-    # MARK: Parameters
+        self._objective = objective if isinstance(objective, Objective) else Objective(objective)
+        self._bins: list[BinType] = []
+        self._items: list[ItemType] = []
+        self._params = Parameters()
 
     def set_objective(self, objective: Objective | str) -> InstanceBuilder:
-        if isinstance(objective, str):
-            objective = Objective(objective)
-        self._objective = objective
+        self._objective = objective if isinstance(objective, Objective) else Objective(objective)
         return self
 
     def set_item_item_minimum_spacing(self, spacing: float) -> InstanceBuilder:
-        self._parameters.item_item_minimum_spacing = spacing
+        self._params.item_item_minimum_spacing = spacing
         return self
 
     def set_open_dimension_xy_aspect_ratio(self, ratio: float) -> InstanceBuilder:
-        self._parameters.open_dimension_xy_aspect_ratio = ratio
+        self._params.open_dimension_xy_aspect_ratio = ratio
         return self
 
     def set_leftover_corner(self, corner: Corner | str) -> InstanceBuilder:
-        if isinstance(corner, str):
-            corner = Corner(corner)
-        self._parameters.leftover_corner = corner
+        self._params.leftover_corner = corner if isinstance(corner, Corner) else Corner(corner)
         return self
 
     def add_quality_rule(self, rule: list[int]) -> InstanceBuilder:
-        """Add a quality rule (defect allowance vector)."""
-        self._parameters.quality_rules.append(rule)
+        self._params.quality_rules.append(list(rule))
         return self
 
-    # MARK: Bin types
+    def add_bin(self, shape, *, cost: float = -1.0, copies: int = 1,
+                copies_min: int = 0, item_bin_minimum_spacing: float = 0.0) -> int:
+        """Add a bin. `shape` may be a Polygon, `(w, h)` tuple, or radius (float)."""
+        self._bins.append(BinType(
+            shape=_coerce_shape(shape), cost=cost, copies=copies,
+            copies_min=copies_min,
+            item_bin_minimum_spacing=item_bin_minimum_spacing))
+        return len(self._bins) - 1
 
-    def add_bin_type(
-        self,
-        shape: Polygon,
-        *,
-        cost: float = -1.0,
-        copies: int = 1,
-        copies_min: int = 0,
-        item_bin_minimum_spacing: float = 0.0,
-    ) -> int:
-        """Add a bin type from a Shapely Polygon. Returns the bin type ID."""
-        self._bin_types.append(BinType(
-            shape=shape, cost=cost, copies=copies,
-            copies_min=copies_min, item_bin_minimum_spacing=item_bin_minimum_spacing,
-        ))
-        return len(self._bin_types) - 1
+    def add_bin_type(self, shape, **kw) -> int:
+        return self.add_bin(shape, **kw)
 
-    def add_bin_type_rectangle(self, width: float, height: float, **kwargs) -> int:
-        """Shorthand: add a rectangular bin."""
-        return self.add_bin_type(
-            Polygon([(0, 0), (width, 0), (width, height), (0, height)]), **kwargs
-        )
+    def add_bin_type_rectangle(self, width: float, height: float, **kw) -> int:
+        return self.add_bin(rectangle_polygon(width, height), **kw)
 
-    def add_bin_type_circle(self, radius: float, resolution: int = 64, **kwargs) -> int:
-        """Shorthand: add a circular bin."""
-        return self.add_bin_type(circle_to_polygon(radius, resolution=resolution), **kwargs)
+    def add_bin_type_circle(self, radius: float, resolution: int = 64, **kw) -> int:
+        return self.add_bin(circle_polygon(radius, resolution=resolution), **kw)
 
-    def add_defect(
-        self,
-        bin_type_id: int,
-        shape: Polygon,
-        *,
-        defect_type: int = -1,
-        item_defect_minimum_spacing: float = 0.0,
-    ) -> int:
-        """Add a defect to a bin type. Returns the defect ID."""
-        self._bin_types[bin_type_id].defects.append(Defect(
-            shape=shape, defect_type=defect_type,
-            item_defect_minimum_spacing=item_defect_minimum_spacing,
-        ))
-        return len(self._bin_types[bin_type_id].defects) - 1
+    def add_defect(self, bin_type_id: int, shape, *, defect_type: int = -1,
+                   item_defect_minimum_spacing: float = 0.0) -> int:
+        self._bins[bin_type_id].defects.append(Defect(
+            shape=_coerce_shape(shape), defect_type=defect_type,
+            item_defect_minimum_spacing=item_defect_minimum_spacing))
+        return len(self._bins[bin_type_id].defects) - 1
 
-    # MARK: Item types
+    def add_fixed_item(self, bin_type_id: int, item_type_id: int,
+                       bl_corner: tuple[float, float], *,
+                       angle: float = 0.0, mirror: bool = False) -> int:
+        """Pre-place an item in every bin of `bin_type_id`. Solver packs around it."""
+        self._bins[bin_type_id].fixed_items.append(FixedItem(
+            item_type_id=item_type_id, bl_corner=tuple(bl_corner),
+            angle=angle, mirror=mirror))
+        return len(self._bins[bin_type_id].fixed_items) - 1
 
-    def add_item_type(
-        self,
-        shapes: Polygon | list[Polygon | ItemShape],
-        *,
-        profit: float = -1.0,
-        copies: int = 1,
-        allowed_rotations: list[tuple[float, float]] | None = None,
-        allow_mirroring: bool = False,
-    ) -> int:
-        """Add an item type. Accepts a Polygon or list of Polygons/ItemShapes.
+    def add_item(self, shape, *, profit: float = -1.0, copies: int = 1,
+                 allowed_rotations: list | None = None,
+                 allow_mirroring: bool = False) -> int:
+        """Add an item type.
 
-        Returns the item type ID.
+        - `shape` may be a Polygon, list of Polygons / ItemShapes (multi-shape
+          item), an `(w, h)` tuple, or a numeric radius.
+        - `allowed_rotations` accepts:
+            * None / []           -> single fixed angle 0, no mirror
+            * list[float]         -> discrete angles
+            * list[(s, e)]        -> continuous ranges
+            * list[(s, e, mir)]   -> full triple form
+            * list[AllowedRotation]
+          When `allow_mirroring=True`, every base entry is duplicated with
+          `mirror=True`.
         """
-        if isinstance(shapes, Polygon):
-            item_shapes = [ItemShape(shape=shapes)]
-        elif isinstance(shapes, list):
-            item_shapes = [
-                s if isinstance(s, ItemShape) else ItemShape(shape=s)
-                for s in shapes
-            ]
+        if isinstance(shape, list) and shape and not _is_pair(shape[0]):
+            shapes = [s if isinstance(s, ItemShape) else ItemShape(shape=_coerce_shape(s))
+                      for s in shape]
         else:
-            raise TypeError(f"Expected Polygon or list, got {type(shapes)}")
+            shapes = [ItemShape(shape=_coerce_shape(shape))]
 
-        self._item_types.append(ItemType(
-            shapes=item_shapes, profit=profit, copies=copies,
-            allowed_rotations=allowed_rotations or [(0.0, 0.0)],
-            allow_mirroring=allow_mirroring,
-        ))
-        return len(self._item_types) - 1
+        rots = _normalize_rotations(allowed_rotations, allow_mirroring)
+        self._items.append(ItemType(shapes=shapes, profit=profit,
+                                    copies=copies, allowed_rotations=rots))
+        return len(self._items) - 1
 
-    def add_item_type_rectangle(self, width: float, height: float, **kwargs) -> int:
-        """Shorthand: add a rectangular item."""
-        return self.add_item_type(
-            Polygon([(0, 0), (width, 0), (width, height), (0, height)]), **kwargs
-        )
+    def add_item_type(self, shape, **kw) -> int:
+        return self.add_item(shape, **kw)
 
-    def add_item_type_circle(self, radius: float, resolution: int = 64, **kwargs) -> int:
-        """Shorthand: add a circular item."""
-        return self.add_item_type(circle_to_polygon(radius, resolution=resolution), **kwargs)
+    def add_item_type_rectangle(self, width: float, height: float, **kw) -> int:
+        return self.add_item(rectangle_polygon(width, height), **kw)
 
-    # MARK: Build
+    def add_item_type_circle(self, radius: float, resolution: int = 64, **kw) -> int:
+        return self.add_item(circle_polygon(radius, resolution=resolution), **kw)
 
     def build(self) -> Instance:
-        """Build and return the Instance."""
-        return Instance(
-            objective=self._objective,
-            bin_types=self._bin_types,
-            item_types=self._item_types,
-            parameters=self._parameters,
-        )
+        return Instance(self._objective, self._bins, self._items, self._params)
+
+
+def _emit_extra(out: dict, extra: dict) -> dict:
+    """Merge forward-compat extras into output dict (existing keys win)."""
+    if extra:
+        for k, v in extra.items():
+            out.setdefault(k, v)
+    return out
+
+
+def _split_extra(data: dict, known: set) -> dict:
+    """Return a dict of unknown keys (forward-compat safety net)."""
+    return {k: v for k, v in data.items() if k not in known}
+
+
+def _coerce_shape(shape) -> Polygon:
+    if isinstance(shape, Polygon):
+        return shape
+    if isinstance(shape, (int, float)):
+        return circle_polygon(float(shape))
+    if isinstance(shape, tuple) and len(shape) == 2:
+        return rectangle_polygon(*shape)
+    raise TypeError(f"Cannot convert {type(shape).__name__!s} to a Polygon")
+
+
+def _is_pair(x) -> bool:
+    return isinstance(x, (tuple, list)) and len(x) in (2, 3) and all(
+        isinstance(v, (int, float, bool)) for v in x)
+
+
+def _normalize_rotations(rots, mirror_all: bool) -> list[AllowedRotation]:
+    if not rots:
+        base = [AllowedRotation()]
+    else:
+        base = []
+        for r in rots:
+            if isinstance(r, AllowedRotation):
+                base.append(r)
+            elif isinstance(r, (int, float)):
+                base.append(AllowedRotation(float(r), float(r), False))
+            elif isinstance(r, (tuple, list)):
+                if len(r) == 2:
+                    base.append(AllowedRotation(float(r[0]), float(r[1]), False))
+                elif len(r) == 3:
+                    base.append(AllowedRotation(float(r[0]), float(r[1]), bool(r[2])))
+                else:
+                    raise ValueError(f"Bad rotation entry: {r!r}")
+            else:
+                raise TypeError(f"Bad rotation entry: {r!r}")
+    if mirror_all:
+        base = base + [AllowedRotation(r.start_angle, r.end_angle, True)
+                       for r in base if not r.mirror]
+    return base
+
+
+def _params_to_dict(p: Parameters) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    if p.item_item_minimum_spacing:
+        out["item_item_minimum_spacing"] = p.item_item_minimum_spacing
+    if p.open_dimension_xy_aspect_ratio > 0:
+        out["open_dimension_xy_aspect_ratio"] = p.open_dimension_xy_aspect_ratio
+    if p.leftover_corner != Corner.BOTTOM_LEFT:
+        out["leftover_corner"] = p.leftover_corner.value
+    if p.quality_rules:
+        out["quality_rules"] = p.quality_rules
+    return _emit_extra(out, p._extra)
+
+
+_PARAMS_KEYS = {"item_item_minimum_spacing", "open_dimension_xy_aspect_ratio",
+                "leftover_corner", "quality_rules"}
+
+
+def _params_from_dict(jp: dict) -> Parameters:
+    return Parameters(
+        item_item_minimum_spacing=jp.get("item_item_minimum_spacing", 0.0),
+        open_dimension_xy_aspect_ratio=jp.get("open_dimension_xy_aspect_ratio", -1.0),
+        leftover_corner=Corner(jp["leftover_corner"]) if "leftover_corner" in jp
+        else Corner.BOTTOM_LEFT,
+        quality_rules=jp.get("quality_rules", []),
+        _extra=_split_extra(jp, _PARAMS_KEYS),
+    )
+
+
+def _bin_to_dict(b: BinType) -> dict[str, Any]:
+    out = shape_to_json(b.shape)
+    if b.cost != -1.0:
+        out["cost"] = b.cost
+    if b.copies != 1:
+        out["copies"] = b.copies
+    if b.copies_min:
+        out["copies_min"] = b.copies_min
+    if b.item_bin_minimum_spacing:
+        out["item_bin_minimum_spacing"] = b.item_bin_minimum_spacing
+    if b.defects:
+        out["defects"] = [_defect_to_dict(d) for d in b.defects]
+    if b.fixed_items:
+        out["fixed_items"] = [_fixed_to_dict(f) for f in b.fixed_items]
+    return _emit_extra(out, b._extra)
+
+
+_GEOM_KEYS = {"type", "shape", "shapes", "radius", "center", "x", "y",
+              "vertices", "elements", "holes"}
+
+_BIN_KEYS = _GEOM_KEYS | {"cost", "copies", "copies_min",
+                          "item_bin_minimum_spacing", "defects", "fixed_items"}
+
+
+def _bin_from_dict(jb: dict) -> BinType:
+    return BinType(
+        shape=shape_from_json(jb),
+        cost=jb.get("cost", -1.0),
+        copies=jb.get("copies", 1),
+        copies_min=jb.get("copies_min", 0),
+        item_bin_minimum_spacing=jb.get("item_bin_minimum_spacing", 0.0),
+        defects=[_defect_from_dict(d) for d in jb.get("defects", [])],
+        fixed_items=[_fixed_from_dict(f) for f in jb.get("fixed_items", [])],
+        _extra=_split_extra(jb, _BIN_KEYS),
+    )
+
+
+def _fixed_to_dict(f: FixedItem) -> dict[str, Any]:
+    out = {
+        "item_type_id": f.item_type_id,
+        "bl_corner": {"x": f.bl_corner[0], "y": f.bl_corner[1]},
+        "angle": f.angle,
+        "mirror": f.mirror,
+    }
+    return _emit_extra(out, f._extra)
+
+
+_FIXED_KEYS = {"item_type_id", "bl_corner", "angle", "mirror"}
+
+
+def _fixed_from_dict(jf: dict) -> FixedItem:
+    bl = jf.get("bl_corner", {})
+    return FixedItem(
+        item_type_id=jf.get("item_type_id", 0),
+        bl_corner=(bl.get("x", 0.0), bl.get("y", 0.0)),
+        angle=jf.get("angle", 0.0),
+        mirror=jf.get("mirror", False),
+        _extra=_split_extra(jf, _FIXED_KEYS),
+    )
+
+
+def _defect_to_dict(d: Defect) -> dict[str, Any]:
+    out = shape_to_json(d.shape)
+    if d.defect_type != -1:
+        out["defect_type"] = d.defect_type
+    if d.item_defect_minimum_spacing:
+        out["item_defect_minimum_spacing"] = d.item_defect_minimum_spacing
+    return _emit_extra(out, d._extra)
+
+
+_DEFECT_KEYS = _GEOM_KEYS | {"defect_type", "item_defect_minimum_spacing"}
+
+
+def _defect_from_dict(jd: dict) -> Defect:
+    return Defect(
+        shape=shape_from_json(jd),
+        defect_type=jd.get("defect_type", -1),
+        item_defect_minimum_spacing=jd.get("item_defect_minimum_spacing", 0.0),
+        _extra=_split_extra(jd, _DEFECT_KEYS),
+    )
+
+
+def _item_to_dict(it: ItemType) -> dict[str, Any]:
+    if len(it.shapes) == 1:
+        out = _ishape_to_dict(it.shapes[0])
+    else:
+        out = {"shapes": [_ishape_to_dict(s) for s in it.shapes]}
+    if it.profit != -1.0:
+        out["profit"] = it.profit
+    if it.copies != 1:
+        out["copies"] = it.copies
+    default = [AllowedRotation()]
+    if it.allowed_rotations != default:
+        out["allowed_rotations"] = [_rot_to_dict(r) for r in it.allowed_rotations]
+    return _emit_extra(out, it._extra)
+
+
+_ITEM_KEYS = _GEOM_KEYS | {"profit", "copies", "allowed_rotations",
+                           "allow_mirroring", "quality_rule"}
+
+
+def _item_from_dict(ji: dict) -> ItemType:
+    if "shapes" in ji:
+        shapes = [_ishape_from_dict(js) for js in ji["shapes"]]
+    else:
+        shapes = [_ishape_from_dict(ji)]
+    rots: list[AllowedRotation] = []
+    for r in ji.get("allowed_rotations", []):
+        rots.append(_rot_from_dict(r))
+    if not rots:
+        rots = [AllowedRotation()]
+    if ji.get("allow_mirroring"):
+        rots = rots + [AllowedRotation(r.start_angle, r.end_angle, True)
+                       for r in rots if not r.mirror]
+    return ItemType(shapes=shapes, profit=ji.get("profit", -1.0),
+                    copies=ji.get("copies", 1), allowed_rotations=rots,
+                    _extra=_split_extra(ji, _ITEM_KEYS))
+
+
+def _rot_to_dict(r: AllowedRotation) -> dict[str, Any]:
+    out = {"start": r.start_angle, "end": r.end_angle, "mirror": r.mirror}
+    return _emit_extra(out, r._extra)
+
+
+_ROT_KEYS = {"start", "end", "mirror", "start_angle", "end_angle"}
+
+
+def _rot_from_dict(jr: dict) -> AllowedRotation:
+    return AllowedRotation(
+        start_angle=jr.get("start", jr.get("start_angle", 0.0)),
+        end_angle=jr.get("end", jr.get("end_angle", 0.0)),
+        mirror=jr.get("mirror", False),
+        _extra=_split_extra(jr, _ROT_KEYS),
+    )
+
+
+def _ishape_to_dict(s: ItemShape) -> dict[str, Any]:
+    out = shape_to_json(s.shape)
+    if s.quality_rule != -1:
+        out["quality_rule"] = s.quality_rule
+    return _emit_extra(out, s._extra)
+
+
+_ISHAPE_KEYS = _GEOM_KEYS | {"quality_rule"}
+
+
+def _ishape_from_dict(js: dict) -> ItemShape:
+    return ItemShape(shape=shape_from_json(js),
+                     quality_rule=js.get("quality_rule", -1),
+                     _extra=_split_extra(js, _ISHAPE_KEYS))
+# __PYCK_END__

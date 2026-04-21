@@ -1,13 +1,12 @@
-"""Solver wrapper — invokes the C++ PackingSolver binary via subprocess."""
+"""Solver — invokes the C++ packingsolver_irregular binary via subprocess."""
 
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
-import sys
 import tempfile
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -15,364 +14,279 @@ from pyckingsolver.instance import Instance
 from pyckingsolver.solution import Solution
 from pyckingsolver.types import Corner
 
+# MARK: SolverParams ─────────────────────────────────────────────────────────
 
-# MARK: - Solver
+
+@dataclass
+class SolverParams:
+    """All solver knobs in one place. Pass to `Solver.solve(..., params=...)`
+    or as keyword arguments (each field is also a kwarg of `solve`).
+
+    Setting any `use_*` flag disables auto-algorithm-selection. For typical
+    irregular nesting, leave them all `None` and let the solver pick.
+
+    `anchor=False` is the safe default — the LP anchor post-process can crash
+    on dense inputs.
+    """
+    # I/O & misc
+    time_limit: float = 60.0
+    verbosity_level: int = 0
+    seed: int | None = None
+    only_write_at_the_end: bool = False
+    extra_args: list[str] = field(default_factory=list)
+
+    # Algorithm selection
+    optimization_mode: str | None = None  # Anytime / NotAnytime / NotAnytimeDeterministic / NotAnytimeSequential
+    use_tree_search: bool | None = None
+    use_local_search: bool | None = None
+    use_milp_raster: bool | None = None
+    use_sequential_single_knapsack: bool | None = None
+    use_sequential_value_correction: bool | None = None
+    use_column_generation: bool | None = None
+    use_dichotomic_search: bool | None = None
+    use_sequential_feasibility: bool | None = None
+    sequential_feasibility_use_tree_search: bool | None = None
+    sequential_feasibility_use_local_search: bool | None = None
+    sequential_feasibility_use_milp_raster: bool | None = None
+
+    # LP
+    linear_programming_solver: str | None = None  # "CLP" or "Highs"
+
+    # Post-processing
+    anchor: bool = False
+    anchor_x_weight: float | None = None
+    anchor_y_weight: float | None = None
+    group_identical_bins: bool = False
+
+    # Instance-level CLI overrides
+    item_item_minimum_spacing: float | None = None
+    item_bin_minimum_spacing: float | None = None
+    leftover_corner: Corner | str | None = None
+    bin_unweighted: bool = False
+    unweighted: bool = False
+    continuous_rotations: bool = False
+
+    # Tuning (rarely needed; defaults are good)
+    initial_maximum_approximation_ratio: float | None = None
+    maximum_approximation_ratio_factor: float | None = None
+    sequential_value_correction_subproblem_queue_size: int | None = None
+    column_generation_subproblem_queue_size: int | None = None
+    not_anytime_maximum_approximation_ratio: float | None = None
+    not_anytime_tree_search_queue_size: int | None = None
+    not_anytime_sequential_single_knapsack_subproblem_queue_size: int | None = None
+    not_anytime_sequential_value_correction_number_of_iterations: int | None = None
+    not_anytime_dichotomic_search_subproblem_queue_size: int | None = None
+
+
+# MARK: Solver ───────────────────────────────────────────────────────────────
+
 
 class Solver:
-    """Wrapper around the PackingSolver C++ binary.
+    """Wraps the C++ `packingsolver_irregular` binary.
 
-    Usage::
+    Auto-discovers the binary in this order:
+      1. bundled `pyckingsolver/bin/`
+      2. `PATH`
+      3. local CMake build directories under `extern/packingsolver/build/`
 
-        solver = Solver()  # auto-find bundled binary / PATH / common build paths
-        solution = solver.solve(instance, time_limit=30)
-
-    If the binary lives in a custom location, pass it explicitly::
-
-        solver = Solver(binary="path/to/packingsolver_irregular")
-        solution = solver.solve(instance, time_limit=30)
+    Pass `binary=...` to override.
     """
 
-    def __init__(
-        self,
-        binary: str | Path | None = None,
-        problem_type: str = "irregular",
-    ):
+    def __init__(self, binary: str | Path | None = None,
+                 problem_type: str = "irregular"):
         self.problem_type = problem_type
-        if binary is not None:
-            self.binary = Path(binary)
-        else:
-            self.binary = self._find_binary(problem_type)
+        self.binary = Path(binary) if binary else _find_binary(problem_type)
 
-    @staticmethod
-    def _find_binary(problem_type: str) -> Path:
-        """Search bundled bin/, PATH, and common install locations."""
-        name = f"packingsolver_{problem_type}"
-        pkg_dir = Path(__file__).resolve().parent          # packingsolver/
-        pkg_root = pkg_dir.parent                          # python/
-        repo_root = pkg_root.parent                        # pyckingsolver/
-        submodule = repo_root / "extern" / "packingsolver"
-
-        # 1) Bundled binary (installed via pip)
-        for suffix in (f"{name}.exe", name):
-            candidate = pkg_dir / "bin" / suffix
-            if candidate.exists():
-                return candidate
-
-        # 2) System PATH
-        found = shutil.which(name)
-        if found:
-            return Path(found)
-
-        # 3) Local build / submodule build
-        for root in (pkg_root, repo_root, submodule):
-            for suffix in (f"{name}.exe", name):
-                for subdir in ("install/bin", "build/src/irregular",
-                               "build/src/irregular/Release"):
-                    candidate = root / subdir / suffix
-                    if candidate.exists():
-                        return candidate
-
-        raise FileNotFoundError(
-            f"Cannot find '{name}' binary. "
-            f"Pass the binary path explicitly or add it to PATH."
-        )
-
-    # MARK: Solve
-
-    def solve(
-        self,
-        instance: Instance | str | Path,
-        *,
-        time_limit: float = 60,
-        verbosity_level: int = 0,
-        json_output: str | Path | None = None,
-        output_path: str | Path | None = None,
-        extra_args: list[str] | None = None,
-        # Algorithm control
-        optimization_mode: str | None = None,
-        use_tree_search: bool | None = None,
-        use_local_search: bool | None = None,
-        use_milp_raster: bool | None = None,
-        use_sequential_single_knapsack: bool | None = None,
-        use_sequential_value_correction: bool | None = None,
-        use_column_generation: bool | None = None,
-        use_dichotomic_search: bool | None = None,
-        use_sequential_feasibility: bool | None = None,
-        sequential_feasibility_use_tree_search: bool | None = None,
-        sequential_feasibility_use_local_search: bool | None = None,
-        sequential_feasibility_use_milp_raster: bool | None = None,
-        # LP solver
-        linear_programming_solver: str | None = None,
-        # Post-processing
-        anchor: bool | None = None,
-        anchor_x_weight: float | None = None,
-        anchor_y_weight: float | None = None,
-        # Instance-level overrides (applied via CLI, not modifying the JSON)
-        item_item_minimum_spacing: float | None = None,
-        item_bin_minimum_spacing: float | None = None,
-        leftover_corner: Corner | str | None = None,
-        bin_unweighted: bool = False,
-        unweighted: bool = False,
-        continuous_rotations: bool = False,
-        # Misc
-        seed: int | None = None,
-        group_identical_bins: bool = False,
-        only_write_at_the_end: bool = False,
-        # Algorithm tuning
-        initial_maximum_approximation_ratio: float | None = None,
-        maximum_approximation_ratio_factor: float | None = None,
-        sequential_value_correction_subproblem_queue_size: int | None = None,
-        column_generation_subproblem_queue_size: int | None = None,
-        not_anytime_maximum_approximation_ratio: float | None = None,
-        not_anytime_tree_search_queue_size: int | None = None,
-        not_anytime_sequential_single_knapsack_subproblem_queue_size: int | None = None,
-        not_anytime_sequential_value_correction_number_of_iterations: int | None = None,
-        not_anytime_dichotomic_search_subproblem_queue_size: int | None = None,
-    ) -> Solution:
-        """Run the solver and return the parsed Solution.
+    def solve(self, instance: Instance | str | Path,
+              params: SolverParams | None = None,
+              *,
+              json_output: str | Path | None = None,
+              **kwargs: Any) -> Solution:
+        """Run the solver and return a parsed `Solution`.
 
         Args:
-            instance: An Instance object or path to a JSON file.
-            time_limit: Maximum solving time in seconds.
-            verbosity_level: 0 = quiet, 1 = summary, 2 = verbose.
-            json_output: Optional path to persist the parsed solution JSON.
-            output_path: Backward-compatible alias for ``json_output``.
-            extra_args: Additional CLI arguments for the solver.
-            optimization_mode: "Anytime", "NotAnytime",
-                "NotAnytimeDeterministic", or "NotAnytimeSequential".
-            use_tree_search: Enable tree search algorithm.
-            use_local_search: Enable local search algorithm.
-            use_milp_raster: Enable MILP raster algorithm.
-            use_sequential_single_knapsack: Enable sequential single knapsack.
-            use_sequential_value_correction: Enable sequential value correction.
-            use_column_generation: Enable column generation.
-            use_dichotomic_search: Enable dichotomic search.
-            use_sequential_feasibility: Enable sequential feasibility algorithm.
-            sequential_feasibility_use_tree_search: Enable tree search in SF sub-problems.
-            sequential_feasibility_use_local_search: Enable local search in SF sub-problems.
-            sequential_feasibility_use_milp_raster: Enable MILP raster in SF sub-problems.
-            linear_programming_solver: LP solver name ("CLP" or "Highs").
-            anchor: Enable post-processing anchor step.
-            anchor_x_weight: Horizontal slide weight (positive=left, negative=right, 0=off).
-            anchor_y_weight: Vertical slide weight (positive=bottom, negative=top, 0=off).
-            item_item_minimum_spacing: Override item-item spacing from CLI.
-            item_bin_minimum_spacing: Override item-bin spacing from CLI.
-            leftover_corner: Override leftover corner from CLI.
-            bin_unweighted: Set bin costs to their areas.
-            unweighted: Set item profits to their areas.
-            continuous_rotations: Set all item types to continuous rotations.
-            seed: Random seed (currently unused by solver).
-            group_identical_bins: Post-processing to merge identical bins.
-            only_write_at_the_end: Only write output at program end.
-            initial_maximum_approximation_ratio: Initial approx ratio (default 0.20).
-            maximum_approximation_ratio_factor: Approx ratio factor (default 0.75).
-            sequential_value_correction_subproblem_queue_size: Queue size (default 128).
-            column_generation_subproblem_queue_size: Queue size (default 128).
-            not_anytime_maximum_approximation_ratio: Non-anytime ratio (default 0.05).
-            not_anytime_tree_search_queue_size: Non-anytime queue (default 512).
-            not_anytime_sequential_single_knapsack_subproblem_queue_size: Queue (default 512).
-            not_anytime_sequential_value_correction_number_of_iterations: Iterations (default 32).
-            not_anytime_dichotomic_search_subproblem_queue_size: Queue (default 128).
+            instance: An `Instance` or a path to a JSON file.
+            params: A `SolverParams` instance (preferred for many options).
+            json_output: Optional path to save the solution JSON.
+            **kwargs: Any `SolverParams` field can be passed as a kwarg.
         """
-        if json_output is not None and output_path is not None:
-            raise ValueError("Pass only one of 'json_output' or 'output_path'.")
+        sp = _merge_params(params, kwargs)
 
-        export_path = Path(json_output) if json_output is not None else (
-            Path(output_path) if output_path is not None else None
-        )
-
-        with tempfile.TemporaryDirectory(prefix="packingsolver_") as tmpdir:
-            tmp = Path(tmpdir)
-
-            # Resolve input
+        with tempfile.TemporaryDirectory(prefix="packingsolver_") as tmp_str:
+            tmp = Path(tmp_str)
+            input_path = (tmp / "instance.json")
             if isinstance(instance, Instance):
-                input_path = tmp / "instance.json"
                 instance.to_json(input_path)
+                bin_types = instance.bin_types
             else:
                 input_path = Path(instance)
+                bin_types = []  # caller may not have an Instance object
 
             sol_path = tmp / "solution.json"
             metrics_path = tmp / "output.json"
+            cmd = _build_cmd(self.binary, input_path, sol_path, metrics_path, sp)
 
-            # Build command
-            cmd = [
-                str(self.binary),
-                "--input", str(input_path),
-                "--certificate", str(sol_path),
-                "--output", str(metrics_path),
-                "--time-limit", str(int(time_limit)),
-                "--verbosity-level", str(verbosity_level),
-            ]
-
-            # Algorithm control
-            if optimization_mode is not None:
-                cmd += ["--optimization-mode", str(optimization_mode)]
-            _append_bool_flag(cmd, "--use-tree-search", use_tree_search)
-            _append_bool_flag(cmd, "--use-local-search", use_local_search)
-            _append_bool_flag(cmd, "--use-milp-raster", use_milp_raster)
-            _append_bool_flag(cmd, "--use-sequential-single-knapsack",
-                              use_sequential_single_knapsack)
-            _append_bool_flag(cmd, "--use-sequential-value-correction",
-                              use_sequential_value_correction)
-            _append_bool_flag(cmd, "--use-column-generation",
-                              use_column_generation)
-            _append_bool_flag(cmd, "--use-dichotomic-search",
-                              use_dichotomic_search)
-            _append_bool_flag(cmd, "--use-sequential-feasibility",
-                              use_sequential_feasibility)
-            _append_bool_flag(cmd, "--sequential-feasibility-use-tree-search",
-                              sequential_feasibility_use_tree_search)
-            _append_bool_flag(cmd, "--sequential-feasibility-use-local-search",
-                              sequential_feasibility_use_local_search)
-            _append_bool_flag(cmd, "--sequential-feasibility-use-milp-raster",
-                              sequential_feasibility_use_milp_raster)
-
-            # LP solver
-            if linear_programming_solver is not None:
-                cmd += ["--linear-programming-solver",
-                        str(linear_programming_solver)]
-
-            # Post-processing
-            # MARK: C++ main.cpp checks `vm.count("anchor")` (presence only),
-            # so `--anchor 0` still enables anchor. Only pass it when enabled.
-            if anchor:
-                cmd += ["--anchor", "1"]
-            if anchor_x_weight is not None:
-                cmd += ["--anchor-x-weight", str(anchor_x_weight)]
-            if anchor_y_weight is not None:
-                cmd += ["--anchor-y-weight", str(anchor_y_weight)]
-
-            # Instance-level overrides
-            if item_item_minimum_spacing is not None:
-                cmd += ["--item-item-minimum-spacing",
-                        str(item_item_minimum_spacing)]
-            if item_bin_minimum_spacing is not None:
-                cmd += ["--item-bin-minimum-spacing",
-                        str(item_bin_minimum_spacing)]
-            if leftover_corner is not None:
-                val = (leftover_corner.value
-                       if isinstance(leftover_corner, Corner)
-                       else str(leftover_corner))
-                cmd += ["--leftover-corner", val]
-            if bin_unweighted:
-                cmd.append("--bin-unweighted")
-            if unweighted:
-                cmd.append("--unweighted")
-            if continuous_rotations:
-                cmd.append("--continuous-rotations")
-
-            # Misc
-            if seed is not None:
-                cmd += ["--seed", str(seed)]
-            if group_identical_bins:
-                cmd += ["--group-identical-bins", "1"]
-            if only_write_at_the_end:
-                cmd.append("--only-write-at-the-end")
-
-            # Algorithm tuning
-            _TUNING = {
-                "--initial-maximum-approximation-ratio":
-                    initial_maximum_approximation_ratio,
-                "--maximum-approximation-ratio-factor":
-                    maximum_approximation_ratio_factor,
-                "--sequential-value-correction-subproblem-queue-size":
-                    sequential_value_correction_subproblem_queue_size,
-                "--column-generation-subproblem-queue-size":
-                    column_generation_subproblem_queue_size,
-                "--not-anytime-maximum-approximation-ratio":
-                    not_anytime_maximum_approximation_ratio,
-                "--not-anytime-tree-search-queue-size":
-                    not_anytime_tree_search_queue_size,
-                "--not-anytime-sequential-single-knapsack-subproblem-queue-size":
-                    not_anytime_sequential_single_knapsack_subproblem_queue_size,
-                "--not-anytime-sequential-value-correction-number-of-iterations":
-                    not_anytime_sequential_value_correction_number_of_iterations,
-                "--not-anytime-dichotomic-search-subproblem-queue-size":
-                    not_anytime_dichotomic_search_subproblem_queue_size,
-            }
-            for flag, value in _TUNING.items():
-                if value is not None:
-                    cmd += [flag, str(value)]
-
-            # Forward-compat: extra CLI arguments
-            cmd.extend(extra_args or [])
-
-            result = subprocess.run(
-                cmd, capture_output=True, text=True,
-                timeout=time_limit + 30,
-                cwd=tmpdir,
-            )
-
+            result = subprocess.run(cmd, capture_output=True, text=True,
+                                    timeout=sp.time_limit + 30, cwd=tmp_str)
             if result.returncode != 0:
-                # Try to save crash input for debugging — INSIDE the package
-                # (within venv → cleaned with venv). Read-only filesystems are
-                # tolerated silently: never write to user home, never crash.
-                crash_file: Path | None = None
-                pkg_crash_dir = Path(__file__).resolve().parent / "_crashes"
-                try:
-                    pkg_crash_dir.mkdir(exist_ok=True)
-                    candidate = pkg_crash_dir / f"crash_{result.returncode}.json"
-                    shutil.copy(input_path, candidate)
-                    crash_file = candidate
-                except OSError:
-                    pass  # read-only fs / permission denied — skip dump
+                self._save_crash(input_path, result.returncode)
                 raise RuntimeError(
                     f"Solver failed (exit {result.returncode}):\n"
-                    f"{result.stderr or result.stdout}"
-                    + (f"\nCrash input saved to: {crash_file}" if crash_file else "")
-                )
-
+                    f"{result.stderr or result.stdout}")
             if not sol_path.exists():
                 raise FileNotFoundError(
-                    f"Solver produced no output.\nstdout: {result.stdout}"
-                )
+                    f"Solver produced no output. stdout:\n{result.stdout}")
 
-            solution = Solution.from_json(sol_path)
-
-            # Parse metrics from --output JSON
+            sol = Solution.from_json(sol_path)
             if metrics_path.exists():
-                try:
-                    raw = json.loads(metrics_path.read_text(encoding="utf-8"))
-                    solution.metrics = _parse_metrics(raw)
-                except (json.JSONDecodeError, KeyError):
-                    pass
+                sol.metrics = _read_metrics(metrics_path)
+            if bin_types:
+                sol.mark_fixed_items(bin_types)
+            if json_output:
+                sol.to_json(json_output)
+            return sol
 
-            if export_path is not None:
-                solution.to_json(export_path)
-            return solution
+    @staticmethod
+    def _save_crash(input_path: Path, exit_code: int) -> None:
+        try:
+            d = Path(__file__).resolve().parent / "_crashes"
+            d.mkdir(exist_ok=True)
+            shutil.copy(input_path, d / f"crash_{exit_code}.json")
+        except OSError:
+            pass  # read-only fs / permission denied — just skip
 
     def __repr__(self) -> str:
-        return f"Solver(binary={str(self.binary)!r}, type={self.problem_type!r})"
+        return f"Solver(binary={str(self.binary)!r})"
 
 
-# MARK: - Helpers
-
-def _append_bool_flag(cmd: list[str], flag: str, value: bool | None) -> None:
-    """Append a ``--flag 1`` or ``--flag 0`` pair when *value* is not None."""
-    if value is not None:
-        cmd += [flag, "1" if value else "0"]
+# MARK: command builder ──────────────────────────────────────────────────────
 
 
-def _parse_metrics(raw: dict[str, Any]) -> dict[str, Any]:
-    """Extract solution metrics from the solver ``--output`` JSON."""
-    metrics: dict[str, Any] = {}
-    # The output JSON may nest solution data under "Solution" or at top level
-    src = raw.get("Solution", raw)
-    _KEYS = (
-        "NumberOfItems", "ItemArea", "ItemProfit",
-        "NumberOfBins", "BinArea", "BinCost",
-        "FullWaste", "FullWastePercentage",
-        "XMin", "YMin", "XMax", "YMax",
-        "DensityX", "DensityY",
-        "OpenDimensionXYArea", "LeftoverValue",
-    )
-    for key in _KEYS:
-        if key in src:
-            metrics[key] = src[key]
-    # Preserve any extra keys not in the known set
-    for key, value in src.items():
-        if key not in metrics:
-            metrics[key] = value
-    return metrics
+def _build_cmd(binary: Path, inp: Path, sol: Path, metrics: Path,
+               sp: SolverParams) -> list[str]:
+    cmd = [str(binary),
+           "--input", str(inp),
+           "--certificate", str(sol),
+           "--output", str(metrics),
+           "--time-limit", str(int(sp.time_limit)),
+           "--verbosity-level", str(sp.verbosity_level)]
+
+    # Bool flags that take "1"/"0" values.
+    for attr, flag in _BOOL_VALUE_FLAGS.items():
+        v = getattr(sp, attr)
+        if v is not None:
+            cmd += [flag, "1" if v else "0"]
+
+    # Value flags.
+    for attr, flag in _VALUE_FLAGS.items():
+        v = getattr(sp, attr)
+        if v is not None:
+            cmd += [flag, str(v)]
+
+    if sp.leftover_corner is not None:
+        cmd += ["--leftover-corner",
+                sp.leftover_corner.value if isinstance(sp.leftover_corner, Corner)
+                else str(sp.leftover_corner)]
+
+    # Presence-only bool flags.
+    if sp.bin_unweighted:
+        cmd.append("--bin-unweighted")
+    if sp.unweighted:
+        cmd.append("--unweighted")
+    if sp.continuous_rotations:
+        cmd.append("--continuous-rotations")
+    if sp.only_write_at_the_end:
+        cmd.append("--only-write-at-the-end")
+
+    # Quirks: anchor presence-based, group-identical-bins value-based.
+    if sp.anchor:
+        cmd += ["--anchor", "1"]
+    if sp.group_identical_bins:
+        cmd += ["--group-identical-bins", "1"]
+
+    cmd.extend(sp.extra_args)
+    return cmd
 
 
+_BOOL_VALUE_FLAGS = {
+    "use_tree_search": "--use-tree-search",
+    "use_local_search": "--use-local-search",
+    "use_milp_raster": "--use-milp-raster",
+    "use_sequential_single_knapsack": "--use-sequential-single-knapsack",
+    "use_sequential_value_correction": "--use-sequential-value-correction",
+    "use_column_generation": "--use-column-generation",
+    "use_dichotomic_search": "--use-dichotomic-search",
+    "use_sequential_feasibility": "--use-sequential-feasibility",
+    "sequential_feasibility_use_tree_search": "--sequential-feasibility-use-tree-search",
+    "sequential_feasibility_use_local_search": "--sequential-feasibility-use-local-search",
+    "sequential_feasibility_use_milp_raster": "--sequential-feasibility-use-milp-raster",
+}
+
+_VALUE_FLAGS = {
+    "optimization_mode": "--optimization-mode",
+    "linear_programming_solver": "--linear-programming-solver",
+    "anchor_x_weight": "--anchor-x-weight",
+    "anchor_y_weight": "--anchor-y-weight",
+    "item_item_minimum_spacing": "--item-item-minimum-spacing",
+    "item_bin_minimum_spacing": "--item-bin-minimum-spacing",
+    "seed": "--seed",
+    "initial_maximum_approximation_ratio": "--initial-maximum-approximation-ratio",
+    "maximum_approximation_ratio_factor": "--maximum-approximation-ratio-factor",
+    "sequential_value_correction_subproblem_queue_size":
+        "--sequential-value-correction-subproblem-queue-size",
+    "column_generation_subproblem_queue_size":
+        "--column-generation-subproblem-queue-size",
+    "not_anytime_maximum_approximation_ratio":
+        "--not-anytime-maximum-approximation-ratio",
+    "not_anytime_tree_search_queue_size": "--not-anytime-tree-search-queue-size",
+    "not_anytime_sequential_single_knapsack_subproblem_queue_size":
+        "--not-anytime-sequential-single-knapsack-subproblem-queue-size",
+    "not_anytime_sequential_value_correction_number_of_iterations":
+        "--not-anytime-sequential-value-correction-number-of-iterations",
+    "not_anytime_dichotomic_search_subproblem_queue_size":
+        "--not-anytime-dichotomic-search-subproblem-queue-size",
+}
+
+
+# MARK: helpers ──────────────────────────────────────────────────────────────
+
+
+def _merge_params(params: SolverParams | None, kwargs: dict[str, Any]) -> SolverParams:
+    if params is None:
+        return SolverParams(**kwargs)
+    if not kwargs:
+        return params
+    base = asdict(params)
+    base.update(kwargs)
+    return SolverParams(**base)
+
+
+def _read_metrics(path: Path) -> dict[str, Any]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw.get("Solution", raw) if isinstance(raw, dict) else {}
+
+
+def _find_binary(problem_type: str) -> Path:
+    name = f"packingsolver_{problem_type}"
+    pkg_dir = Path(__file__).resolve().parent
+    repo_root = pkg_dir.parent.parent
+    submodule = repo_root / "extern" / "packingsolver"
+    candidates: list[Path] = []
+    for stem in (f"{name}.exe", name):
+        candidates.append(pkg_dir / "bin" / stem)
+    found = shutil.which(name)
+    if found:
+        candidates.append(Path(found))
+    for root in (repo_root, submodule):
+        for sub in ("install/bin", "build/src/irregular",
+                    "build/src/irregular/Release"):
+            for stem in (f"{name}.exe", name):
+                candidates.append(root / sub / stem)
+    for c in candidates:
+        if c.exists():
+            return c
+    raise FileNotFoundError(
+        f"Cannot find {name!r}. Pass binary=... or build the C++ project.")
