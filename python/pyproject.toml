@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 readme = {file = "../README.md", content-type = "text/markdown"}
 license = {text = "AGPL-3.0-or-later"}
 authors = [
-    {name = "Hamza Yesilmen", email = "Hamzayesilmen7@gmail.com"},
+    {name = "Hamza Yesilmen", email = "resmiyslmn@gmail.com"},
 ]
 keywords = [
     "packing", "nesting", "bin-packing", "cutting-stock",
