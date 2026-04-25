@@ -2,7 +2,7 @@
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
 C++ submodule pinned at `extern/packingsolver` (commit `98daf10` — 2026-04-19).  
-Python wrapper version: `0.2.0` (see `## v0.2.0 Breaking Changes` below).
+Python wrapper version: `0.2.1` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
