@@ -1,4 +1,5 @@
 build/
+build_noclp/
 .vscode
 .github/copilot-instructions.md
 __pycache__

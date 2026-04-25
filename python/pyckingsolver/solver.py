@@ -50,7 +50,10 @@ class SolverParams:
     sequential_feasibility_use_milp_raster: bool | None = None
 
     # LP
-    linear_programming_solver: str | None = None  # "CLP" or "Highs"
+    # Default "Highs" — HiGHS is always compiled in. The upstream C++ default
+    # is CLP, which crashes (stack overrun) when CLP isn't compiled into the
+    # binary (as is the case for ARM wheels and any HiGHS-only build).
+    linear_programming_solver: str | None = "Highs"  # "CLP" or "Highs"
 
     # Post-processing
     anchor: bool = False
