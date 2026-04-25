@@ -28,7 +28,7 @@ from pyckingsolver.types import (
     SolutionItem,
 )
 
-__version__ = "0.2.3"
+__version__ = "0.2.6"
 
 __all__ = [
     "__version__",
