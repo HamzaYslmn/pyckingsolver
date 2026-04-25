@@ -9,3 +9,4 @@ python/packingsolver/bin/
 python/pyckingsolver/_crashes/
 python/test/_tmp_*
 python/test/*.png
+bin/
