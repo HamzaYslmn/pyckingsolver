@@ -219,6 +219,7 @@ Gotchas:
 
 ## MARK: Known Binary Bugs
 
+- **Default LP solver MUST be HiGHS, not CLP, for HiGHS-only builds.** The wrapper now defaults `SolverParams.linear_programming_solver = "Highs"`. The upstream C++ default in `optimize.hpp` is `SolverName::CLP`; when CLP isn't compiled in (e.g. all CI wheels, since CLP prebuilt is x86_64-only), running with the default (or `--linear-programming-solver CLP`) crashes with `STATUS_STACK_BUFFER_OVERRUN` (0xC0000409 / SIGABRT) on **any** instance with >1 placeable bin (any objective, any options). Reproduces with the simplest possible JSON: 1 rect item type + 1 rect bin type with `copies=2`. Fix: don't override the wrapper's `Highs` default unless your binary has CLP compiled in.
 - `group_identical_bins=True` was crashing — **FIXED** in solver.py. C++ expects `--group-identical-bins 1` (value required), not bare flag.
 - `inflate()` crashes on complex shapes with holes + non-zero spacing — always pre-buffer in Python.
 - `--anchor 0` still **enables** anchor — **FIXED** in solver.py. C++ `main.cpp` uses `vm.count("anchor")` (presence only), not the value. Python now only passes `--anchor 1` when enabled, omits flag otherwise.
