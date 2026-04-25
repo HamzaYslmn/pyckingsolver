@@ -1,12 +1,12 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `98daf10` — 2026-04-19).  
-Python wrapper version: `0.2.3` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `f03e5cf1d` — 2026-04-25).
+Python wrapper version: `0.2.7` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
-## MARK: Recent Upstream Changes (2026-04-06 → 2026-04-19)
+## MARK: Recent Upstream Changes (2026-04-06 → 2026-04-25)
 
 | Commit | Change | Impact |
 |---|---|---|
@@ -16,6 +16,9 @@ Python wrapper version: `0.2.3` (see `## v0.2.0 Breaking Changes` below).
 | `0562eeae5` | **Add fixed items** | New API (see Bin Type Fields + Fixed Items section) |
 | `16732ff17` | Move utils to `utils.hpp` | Internal refactor |
 | `98daf10ab` | Update `mathoptsolverscmake` dep | Build only |
+| `9e4b3a80c` | Update visualizers | Tooling only |
+| `d40e0ea15` | Add `GROUP_ID` column in certificate files | Output/certificate metadata |
+| `f03e5cf1d` | Fix maximum weight default value | Bugfix |
 
 **Action required to use new features**: rebuild the bundled C++ binary (`cmake --build extern/packingsolver/build`). Wrapper changes alone don't pull in C++ updates — `pyckingsolver/bin/packingsolver_irregular.exe` must be rebuilt and re-bundled.
 

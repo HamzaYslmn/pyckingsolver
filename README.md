@@ -41,7 +41,7 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 - **`nest()` high-level helper** — pack a flat list of Shapely shapes onto bins in one call, with optional spacing pre-buffer and shape grouping. See [Quick Nest](#quick-nest) below.
 - **`Solution.metrics`** is populated from the solver's output JSON (BinCost, FullWastePercentage, DensityX, …).
 - **`json_output=`** replaces the old `output_path=` kwarg on `Solver.solve()`.
-- The bundled binary is rebuilt against upstream commit `98daf10` (2026-04-19), which adds free rotations for large items, restores the `lost` filter on missing items, and supports PNG export.
+- The bundled binary is rebuilt against upstream commit `f03e5cf1d` (2026-04-25), which includes fixed items, free rotations for large items, restored missing-item filtering, PNG export support, and the maximum-weight default fix.
 - Removed `_extra` forward-compat dicts from `Parameters`, `SolutionItem`, `SolutionBin` — they were unused.
 
 ---
