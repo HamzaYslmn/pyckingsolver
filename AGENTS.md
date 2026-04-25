@@ -222,7 +222,7 @@ Gotchas:
 - `group_identical_bins=True` was crashing — **FIXED** in solver.py. C++ expects `--group-identical-bins 1` (value required), not bare flag.
 - `inflate()` crashes on complex shapes with holes + non-zero spacing — always pre-buffer in Python.
 - `--anchor 0` still **enables** anchor — **FIXED** in solver.py. C++ `main.cpp` uses `vm.count("anchor")` (presence only), not the value. Python now only passes `--anchor 1` when enabled, omits flag otherwise.
-- Anchor post-processing (`linear_programming.cpp`) throws `std::logic_error("violated separation constraint")` on many real inputs → process exits 0xC00000FD. Leave `anchor=False` for production packing.
+- ~~Anchor post-processing (`linear_programming.cpp`) throws `std::logic_error("violated separation constraint")` on many real inputs → process exits 0xC00000FD.~~ **FIXED LOCALLY** (2026-04-25, not yet upstreamed) in `extern/packingsolver/src/irregular/linear_programming.cpp` `linear_programming_anchor()` (public, ~line 626): wrapped per-bin `::linear_programming_anchor()` call in try/catch on `std::logic_error` / `std::exception`; on failure keeps the rigid-shifted solution for that bin. Was caused by FP precision: the LP solver returns positions where the post-verification `value` is just below the `-1e-6` tolerance (e.g. `-0.00001`). Anchor=True is now safe to use in production. Rebuild required: `cmake --build build --config Release --target PackingSolver_irregular_main` (delete `build/src/irregular/Release/packingsolver_irregular.exe` first to force relink).
 
 ---
 
