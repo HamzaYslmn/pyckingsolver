@@ -6,6 +6,22 @@ Python wrapper version: `0.2.7` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
+## MARK: Version Tags
+
+When bumping the Python wrapper version, update all current-version tags:
+
+- `python/pyproject.toml` `[project].version`
+- `python/pyckingsolver/__init__.py` `__version__`
+- `python/uv.lock` `[[package]] name = "pyckingsolver"` version
+- This file's top `Python wrapper version` line
+- `README.md` release/current binary note if the bundled C++ solver pin changed
+- `python/pyckingsolver/types.py` top commit note if the mirrored upstream C++ commit changed
+- Git release tag uses `vX.Y.Z` format, for example `v0.2.7`
+
+Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
+
+---
+
 ## MARK: Recent Upstream Changes (2026-04-06 → 2026-04-25)
 
 | Commit | Change | Impact |
