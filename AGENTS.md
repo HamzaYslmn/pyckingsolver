@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `f03e5cf1d` — 2026-04-25).
-Python wrapper version: `0.2.7` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `10a5db6ae` — 2026-04-26).
+Python wrapper version: `0.3.0` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -16,13 +16,13 @@ When bumping the Python wrapper version, update all current-version tags:
 - This file's top `Python wrapper version` line
 - `README.md` release/current binary note if the bundled C++ solver pin changed
 - `python/pyckingsolver/types.py` top commit note if the mirrored upstream C++ commit changed
-- Git release tag uses `vX.Y.Z` format, for example `v0.2.7`
+- Git release tag uses `vX.Y.Z` format, for example `v0.3.0`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
 
 ---
 
-## MARK: Recent Upstream Changes (2026-04-06 → 2026-04-25)
+## MARK: Recent Upstream Changes (2026-04-06 → 2026-04-26)
 
 | Commit | Change | Impact |
 |---|---|---|
@@ -35,6 +35,7 @@ Historical headings such as `v0.2.0 Breaking Changes` are not current-version ta
 | `9e4b3a80c` | Update visualizers | Tooling only |
 | `d40e0ea15` | Add `GROUP_ID` column in certificate files | Output/certificate metadata |
 | `f03e5cf1d` | Fix maximum weight default value | Bugfix |
+| `10a5db6ae` | Update shape dependency | Build only — pulls newer `shape` lib (geometry primitives + convex hull). May affect FP behavior of NFP / convex_hull crashes seen previously. |
 
 **Action required to use new features**: rebuild the bundled C++ binary (`cmake --build extern/packingsolver/build`). Wrapper changes alone don't pull in C++ updates — `pyckingsolver/bin/packingsolver_irregular.exe` must be rebuilt and re-bundled.
 
