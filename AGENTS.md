@@ -2,7 +2,7 @@
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
 C++ submodule pinned at `extern/packingsolver` (commit `10a5db6ae` — 2026-04-26).
-Python wrapper version: `0.3.0` (see `## v0.2.0 Breaking Changes` below).
+Python wrapper version: `0.3.1` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -16,7 +16,7 @@ When bumping the Python wrapper version, update all current-version tags:
 - This file's top `Python wrapper version` line
 - `README.md` release/current binary note if the bundled C++ solver pin changed
 - `python/pyckingsolver/types.py` top commit note if the mirrored upstream C++ commit changed
-- Git release tag uses `vX.Y.Z` format, for example `v0.3.0`
+- Git release tag uses `vX.Y.Z` format, for example `v0.3.1`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
 
