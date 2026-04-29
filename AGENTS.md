@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `10a5db6ae` — 2026-04-26).
-Python wrapper version: `0.3.2` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `1528db6ea` — 2026-04-28).
+Python wrapper version: `0.3.3` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -16,13 +16,13 @@ When bumping the Python wrapper version, update all current-version tags:
 - This file's top `Python wrapper version` line
 - `README.md` release/current binary note if the bundled C++ solver pin changed
 - `python/pyckingsolver/types.py` top commit note if the mirrored upstream C++ commit changed
-- Git release tag uses `vX.Y.Z` format, for example `v0.3.2`
+- Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
 
 ---
 
-## MARK: Recent Upstream Changes (2026-04-06 → 2026-04-26)
+## MARK: Recent Upstream Changes (2026-04-06 → 2026-04-28)
 
 | Commit | Change | Impact |
 |---|---|---|
@@ -36,6 +36,8 @@ Historical headings such as `v0.2.0 Breaking Changes` are not current-version ta
 | `d40e0ea15` | Add `GROUP_ID` column in certificate files | Output/certificate metadata |
 | `f03e5cf1d` | Fix maximum weight default value | Bugfix |
 | `10a5db6ae` | Update shape dependency | Build only — pulls newer `shape` lib (geometry primitives + convex hull). May affect FP behavior of NFP / convex_hull crashes seen previously. |
+| `daa35a121` | Add missing try/catch in solver mains | Stability — solver mains now catch C++ exceptions and exit cleanly instead of aborting. |
+| `1528db6ea` | Fix `--anchor` option in irregular main | Bugfix — `--anchor 0` now correctly **disables** anchor. Previously `vm.count("anchor")` made any presence enable it; now reads `vm["anchor"].as<bool>()`. Wrapper already worked around this by omitting the flag when false; still compatible. |
 
 **Action required to use new features**: rebuild the bundled C++ binary (`cmake --build extern/packingsolver/build`). Wrapper changes alone don't pull in C++ updates — `pyckingsolver/bin/packingsolver_irregular.exe` must be rebuilt and re-bundled.
 
@@ -242,7 +244,7 @@ Gotchas:
 - **Default LP solver MUST be HiGHS, not CLP, for HiGHS-only builds.** The wrapper now defaults `SolverParams.linear_programming_solver = "Highs"`. The upstream C++ default in `optimize.hpp` is `SolverName::CLP`; when CLP isn't compiled in (e.g. all CI wheels, since CLP prebuilt is x86_64-only), running with the default (or `--linear-programming-solver CLP`) crashes with `STATUS_STACK_BUFFER_OVERRUN` (0xC0000409 / SIGABRT) on **any** instance with >1 placeable bin (any objective, any options). Reproduces with the simplest possible JSON: 1 rect item type + 1 rect bin type with `copies=2`. Fix: don't override the wrapper's `Highs` default unless your binary has CLP compiled in.
 - `group_identical_bins=True` was crashing — **FIXED** in solver.py. C++ expects `--group-identical-bins 1` (value required), not bare flag.
 - `inflate()` crashes on complex shapes with holes + non-zero spacing — always pre-buffer in Python.
-- `--anchor 0` still **enables** anchor — **FIXED** in solver.py. C++ `main.cpp` uses `vm.count("anchor")` (presence only), not the value. Python now only passes `--anchor 1` when enabled, omits flag otherwise.
+- ~~`--anchor 0` still **enables** anchor~~ — **FIXED UPSTREAM** in commit `1528db6ea` (2026-04-28); C++ now reads `vm["anchor"].as<bool>()`. Wrapper still omits the flag when false (no-op now, still correct).
 - ~~Anchor post-processing (`linear_programming.cpp`) throws `std::logic_error("violated separation constraint")` on many real inputs → process exits 0xC00000FD.~~ **FIXED LOCALLY** (2026-04-25, not yet upstreamed) in `extern/packingsolver/src/irregular/linear_programming.cpp` `linear_programming_anchor()` (public, ~line 626): wrapped per-bin `::linear_programming_anchor()` call in try/catch on `std::logic_error` / `std::exception`; on failure keeps the rigid-shifted solution for that bin. Was caused by FP precision: the LP solver returns positions where the post-verification `value` is just below the `-1e-6` tolerance (e.g. `-0.00001`). Anchor=True is now safe to use in production. Rebuild required: `cmake --build build --config Release --target PackingSolver_irregular_main` (delete `build/src/irregular/Release/packingsolver_irregular.exe` first to force relink).
 
 ---
