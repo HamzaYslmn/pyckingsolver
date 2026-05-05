@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `1528db6ea` — 2026-04-28).
-Python wrapper version: `0.3.3` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `a555eb2d3` — 2026-05-05).
+Python wrapper version: `0.3.4` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -22,7 +22,7 @@ Historical headings such as `v0.2.0 Breaking Changes` are not current-version ta
 
 ---
 
-## MARK: Recent Upstream Changes (2026-04-06 → 2026-04-28)
+## MARK: Recent Upstream Changes (2026-04-06 → 2026-05-05)
 
 | Commit | Change | Impact |
 |---|---|---|
@@ -38,6 +38,12 @@ Historical headings such as `v0.2.0 Breaking Changes` are not current-version ta
 | `10a5db6ae` | Update shape dependency | Build only — pulls newer `shape` lib (geometry primitives + convex hull). May affect FP behavior of NFP / convex_hull crashes seen previously. |
 | `daa35a121` | Add missing try/catch in solver mains | Stability — solver mains now catch C++ exceptions and exit cleanly instead of aborting. |
 | `1528db6ea` | Fix `--anchor` option in irregular main | Bugfix — `--anchor 0` now correctly **disables** anchor. Previously `vm.count("anchor")` made any presence enable it; now reads `vm["anchor"].as<bool>()`. Wrapper already worked around this by omitting the flag when false; still compatible. |
+| `d2817d362` | Rename `aabb` → `aabb_unscaled`/`aabb_scaled` in irregular bin type | Internal refactor — no API/JSON change. |
+| `ae4ad3ae7` | Implement `item_shape_scaled`/`orig` methods | Internal refactor — no API/JSON change. |
+| `67f8f9fe3` | Use `AxisAlignedBoundingBox` in `Solution::write_svg` | Internal refactor (SVG export). |
+| `8196e008c` | Fix leftover value computation | C++ bugfix — `LeftoverValue` JSON key preserved, values now correct (uses orig coords, scaled stored separately). |
+| `a5e35a440` | Fix typo (`open_dimension_xy_areaarea` → `open_dimension_xy_area`) | Bugfix in solution method name; wrapper does not consume this key, no impact. |
+| `a555eb2d3` | Separate `leftover_value_` into `leftover_value_orig_`/`scaled_` | Internal refactor; JSON output unchanged (`LeftoverValue` still emitted from `leftover_value_orig()`). |
 
 **Action required to use new features**: rebuild the bundled C++ binary (`cmake --build extern/packingsolver/build`). Wrapper changes alone don't pull in C++ updates — `pyckingsolver/bin/packingsolver_irregular.exe` must be rebuilt and re-bundled.
 
@@ -245,7 +251,7 @@ Gotchas:
 - `group_identical_bins=True` was crashing — **FIXED** in solver.py. C++ expects `--group-identical-bins 1` (value required), not bare flag.
 - `inflate()` crashes on complex shapes with holes + non-zero spacing — always pre-buffer in Python.
 - ~~`--anchor 0` still **enables** anchor~~ — **FIXED UPSTREAM** in commit `1528db6ea` (2026-04-28); C++ now reads `vm["anchor"].as<bool>()`. Wrapper still omits the flag when false (no-op now, still correct).
-- ~~Anchor post-processing (`linear_programming.cpp`) throws `std::logic_error("violated separation constraint")` on many real inputs → process exits 0xC00000FD.~~ **FIXED LOCALLY** (2026-04-25, not yet upstreamed) in `extern/packingsolver/src/irregular/linear_programming.cpp` `linear_programming_anchor()` (public, ~line 626): wrapped per-bin `::linear_programming_anchor()` call in try/catch on `std::logic_error` / `std::exception`; on failure keeps the rigid-shifted solution for that bin. Was caused by FP precision: the LP solver returns positions where the post-verification `value` is just below the `-1e-6` tolerance (e.g. `-0.00001`). Anchor=True is now safe to use in production. Rebuild required: `cmake --build build --config Release --target PackingSolver_irregular_main` (delete `build/src/irregular/Release/packingsolver_irregular.exe` first to force relink).
+- **Anchor post-processing (`linear_programming.cpp`) throws `std::logic_error("violated separation constraint")` on many real inputs → process exits 0xC00000FD.** Caused by FP precision: the LP solver returns positions where the post-verification `value` is just below the `-1e-6` tolerance (e.g. `-0.00001`). A previous local try/catch patch around `::linear_programming_anchor()` was **lost during the 2026-05-05 fast-forward pull to commit `a555eb2d3`** (it was never committed, just an in-tree edit). The current bundled binary `pyckingsolver/bin/packingsolver_irregular.exe` (rebuilt 2026-05-05) does **not** have the safety net. **Workaround**: keep `anchor=False` (wrapper default; `stock.py` already uses False). If you need anchor, re-apply the try/catch in `linear_programming_anchor()` (wrap the per-bin call in try { … } catch (std::exception&) { /* keep rigid-shifted solution */ }) and rebuild before flipping it on.
 
 ---
 
