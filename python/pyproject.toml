@@ -1,6 +1,6 @@
 [project]
 name = "pyckingsolver"
-version = "0.3.4"
+version = "0.3.5"
 description = "Shapely-based Python interface for PackingSolver — 2D irregular bin packing & nesting"
 requires-python = ">=3.10"
 readme = {file = "../README.md", content-type = "text/markdown"}
