@@ -1,6 +1,6 @@
 """Dataclasses and enums for the irregular packing problem.
 
-Mirrors fontanf/packingsolver/irregular as of commit a555eb2d3 (2026-05-05).
+Mirrors fontanf/packingsolver/irregular as of commit dd4691ae5 (2026-05-07).
 All geometry is stored as Shapely Polygons (holes go in interior rings);
 coordinates are in user units; angles in degrees.
 """

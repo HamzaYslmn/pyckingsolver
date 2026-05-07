@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `a555eb2d3` — 2026-05-05).
-Python wrapper version: `0.3.4` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `dd4691ae5` — 2026-05-07).
+Python wrapper version: `0.3.5` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -19,6 +19,24 @@ When bumping the Python wrapper version, update all current-version tags:
 - Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
+
+---
+
+## MARK: Recent Upstream Changes (2026-05-05 → 2026-05-07)
+
+| Commit | Change | Impact |
+|---|---|---|
+| `dd4691ae5` | Update benchmark instances | Data only — no code/API change. |
+| `a4e76786c` | Add missing `add_end_boolean` | C++ stability — propagates the algorithm-end boolean to SVC / SSK / dichotomic / CG sub-solver `Parameters.timer`. Means time-limit / clean-shutdown signals now reliably reach the inner solvers (the exact algos VSBP auto-selects). No API change. |
+| `939d4580a` | Fix small items in `optimize_onedimensional_bound` | Bugfix in onedimensional module — no impact on irregular wrapper. |
+| `c56e42a4e` | Add `sofa_structure_r180` instance | Data only. |
+| `729495829` | Improve rotations for shapes with many candidates | C++ perf — auto-applies. For items that generate >512 candidate `(angle, mirror)` pairs, dedupes by `angular_distance >= 1°` instead of `equal()`. Helps continuous-rotation perf for complex outlines (notches/holes). No API change. |
+| `8b83b5a82` | Update shape dependency | Build only — pulls newer `shape` lib. May further refine NFP / convex-hull FP behavior on top of the prior `10a5db6ae` bump. |
+| `32eb77c38` / `8edde4ea3` | Improve visualizers | Tooling only. |
+| `c9561c63a` | Update `requirements.txt` | Build only. |
+| `5abcd68ae` | Update images | Docs only. |
+
+**Wrapper impact**: zero. No Python source edits required for this bump. Just rebuild `extern/packingsolver/build` (target `PackingSolver_irregular_main`) and copy `packingsolver_irregular.exe` into `python/pyckingsolver/bin/`.
 
 ---
 
