@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from pyckingsolver.instance import Instance
 from pyckingsolver.solution import Solution
-from pyckingsolver.types import Corner
+from pyckingsolver.types import Corner, Objective
 
 # MARK: SolverParams ─────────────────────────────────────────────────────────
 
@@ -31,9 +32,15 @@ class SolverParams:
     # I/O & misc
     time_limit: float = 60.0
     verbosity_level: int = 0
-    seed: int | None = None
+    seed: int | None = None  # binary currently ignores --seed (marked "not used" upstream)
     only_write_at_the_end: bool = False
+    log_path: str | None = None
+    log_to_stderr: bool = False
+    json_search_tree_path: str | None = None
     extra_args: list[str] = field(default_factory=list)
+
+    # Instance objective override (re-run one instance under another objective)
+    objective: Objective | str | None = None
 
     # Algorithm selection
     optimization_mode: str | None = None  # Anytime / NotAnytime / NotAnytimeDeterministic / NotAnytimeSequential
@@ -154,7 +161,7 @@ class Solver:
         try:
             d = Path(__file__).resolve().parent / "_crashes"
             d.mkdir(exist_ok=True)
-            shutil.copy(input_path, d / f"crash_{exit_code}.json")
+            shutil.copy(input_path, d / f"crash_{exit_code}_{os.getpid()}.json")
         except OSError:
             pass  # read-only fs / permission denied — just skip
 
@@ -180,18 +187,15 @@ def _build_cmd(binary: Path, inp: Path, sol: Path, metrics: Path,
         if v is not None:
             cmd += [flag, "1" if v else "0"]
 
-    # Value flags.
+    # Value flags (enums serialize via their .value).
     for attr, flag in _VALUE_FLAGS.items():
         v = getattr(sp, attr)
         if v is not None:
-            cmd += [flag, str(v)]
-
-    if sp.leftover_corner is not None:
-        cmd += ["--leftover-corner",
-                sp.leftover_corner.value if isinstance(sp.leftover_corner, Corner)
-                else str(sp.leftover_corner)]
+            cmd += [flag, v.value if isinstance(v, (Corner, Objective)) else str(v)]
 
     # Presence-only bool flags.
+    if sp.log_to_stderr:
+        cmd.append("--log2stderr")
     if sp.bin_unweighted:
         cmd.append("--bin-unweighted")
     if sp.unweighted:
@@ -228,6 +232,10 @@ _BOOL_VALUE_FLAGS = {
 _VALUE_FLAGS = {
     "optimization_mode": "--optimization-mode",
     "linear_programming_solver": "--linear-programming-solver",
+    "objective": "--objective",
+    "leftover_corner": "--leftover-corner",
+    "log_path": "--log",
+    "json_search_tree_path": "--json-search-tree",
     "anchor_x_weight": "--anchor-x-weight",
     "anchor_y_weight": "--anchor-y-weight",
     "item_item_minimum_spacing": "--item-item-minimum-spacing",
@@ -259,9 +267,7 @@ def _merge_params(params: SolverParams | None, kwargs: dict[str, Any]) -> Solver
         return SolverParams(**kwargs)
     if not kwargs:
         return params
-    base = asdict(params)
-    base.update(kwargs)
-    return SolverParams(**base)
+    return replace(params, **kwargs)
 
 
 def _read_metrics(path: Path) -> dict[str, Any]:

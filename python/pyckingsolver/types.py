@@ -1,8 +1,7 @@
 """Dataclasses and enums for the irregular packing problem.
 
-Mirrors fontanf/packingsolver/irregular as of commit dd4691ae5 (2026-05-07).
-All geometry is stored as Shapely Polygons (holes go in interior rings);
-coordinates are in user units; angles in degrees.
+Mirrors fontanf/packingsolver/irregular. Geometry is stored as Shapely Polygons
+(holes go in interior rings); coordinates are in user units and angles in degrees.
 """
 
 from __future__ import annotations
@@ -11,6 +10,9 @@ import enum
 from dataclasses import dataclass, field
 
 from shapely.geometry import MultiPolygon, Polygon
+
+# A shape accepted by the builder: arbitrary Shapely geometry.
+ShapeLike = Polygon | MultiPolygon
 
 
 class Objective(str, enum.Enum):
@@ -85,30 +87,26 @@ class AllowedRotation:
     start_angle: float = 0.0
     end_angle: float = 0.0
     mirror: bool = False
-    _extra: dict = field(default_factory=dict)  # forward-compat safety net
 
 
 @dataclass
 class Defect:
     """A defect region inside a bin (excluded area)."""
-    shape: Polygon | MultiPolygon = field(default_factory=Polygon)
+    shape: ShapeLike = field(default_factory=Polygon)
     defect_type: int = -1
     item_defect_minimum_spacing: float = 0.0
-    _extra: dict = field(default_factory=dict)
 
 
 @dataclass
 class FixedItem:
     """A pre-placed item that the solver packs around.
 
-    Applies to every bin of the parent BinType. Available since upstream
-    commit 0562eea (2026-04-06).
+    Applies to every bin of the parent BinType.
     """
     item_type_id: int = 0
     bl_corner: tuple[float, float] = (0.0, 0.0)
     angle: float = 0.0
     mirror: bool = False
-    _extra: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -117,22 +115,19 @@ class BinType:
 
     `cost = -1` means the C++ solver uses the bin's area as cost.
     """
-    shape: Polygon = field(default_factory=Polygon)
+    shape: ShapeLike = field(default_factory=Polygon)
     cost: float = -1.0
     copies: int = 1
     copies_min: int = 0
     item_bin_minimum_spacing: float = 0.0
     defects: list[Defect] = field(default_factory=list)
     fixed_items: list[FixedItem] = field(default_factory=list)
-    _extra: dict = field(default_factory=dict)
 
 
 @dataclass
 class ItemShape:
     """A single shape component of an item (items can be multi-shape)."""
-    shape: Polygon | MultiPolygon = field(default_factory=Polygon)
-    quality_rule: int = -1
-    _extra: dict = field(default_factory=dict)
+    shape: ShapeLike = field(default_factory=Polygon)
 
 
 @dataclass
@@ -143,7 +138,6 @@ class ItemType:
     copies: int = 1
     allowed_rotations: list[AllowedRotation] = field(
         default_factory=lambda: [AllowedRotation()])
-    _extra: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -152,8 +146,6 @@ class Parameters:
     item_item_minimum_spacing: float = 0.0
     open_dimension_xy_aspect_ratio: float = -1.0
     leftover_corner: Corner = Corner.BOTTOM_LEFT
-    quality_rules: list[list[int]] = field(default_factory=list)
-    _extra: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -166,7 +158,6 @@ class SolutionItem:
     mirror: bool = False
     is_fixed: bool = False
     shapes: list[Polygon | MultiPolygon] = field(default_factory=list)
-    _extra: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -182,5 +173,4 @@ class SolutionBin:
     x_max: float = 0.0
     y_min: float = 0.0
     y_max: float = 0.0
-    _extra: dict = field(default_factory=dict)
 # __PYCK_END__

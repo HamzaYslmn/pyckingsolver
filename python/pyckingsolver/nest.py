@@ -20,10 +20,11 @@ from __future__ import annotations
 
 from typing import Iterable, Sequence
 
+from shapely.affinity import translate
 from shapely.geometry import Polygon, box
 from shapely.wkb import dumps as wkb_dumps
 
-from pyckingsolver.instance import Instance, InstanceBuilder
+from pyckingsolver.instance import InstanceBuilder
 from pyckingsolver.solution import Solution
 from pyckingsolver.solver import Solver, SolverParams
 from pyckingsolver.types import Objective
@@ -96,7 +97,6 @@ def _anchor(p: Polygon) -> Polygon:
     minx, miny, _, _ = p.bounds
     if minx == 0 and miny == 0:
         return p
-    from shapely.affinity import translate
     return translate(p, xoff=-minx, yoff=-miny)
 
 

@@ -21,7 +21,26 @@ from shapely.geometry import Point, Polygon, MultiPolygon
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 from pyckingsolver import InstanceBuilder, Objective, Solver, Corner, Instance
 
-_solver = Solver()
+
+class _GallerySolver:
+    """Solve in the solver's own deterministic mode so the gallery is stable.
+
+    The default 'Anytime' mode is time-limited and the binary ignores --seed, so
+    each run lands on a different (equally optimal) corner/direction — the images
+    drift between regenerations. 'NotAnytimeDeterministic' is a native PackingSolver
+    mode (no custom post-processing): identical input -> identical, origin-anchored
+    layout every time.
+    """
+
+    def __init__(self):
+        self._solver = Solver()
+
+    def solve(self, instance, **kw):
+        kw.setdefault("optimization_mode", "NotAnytimeDeterministic")
+        return self._solver.solve(instance, **kw)
+
+
+_solver = _GallerySolver()
 IMG_DIR = os.path.join(os.path.dirname(__file__), "..", "img")
 os.makedirs(IMG_DIR, exist_ok=True)
 

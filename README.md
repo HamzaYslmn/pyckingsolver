@@ -4,7 +4,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/pyckingsolver.svg)](https://pypi.org/project/pyckingsolver/)
 [![Python 3.10+](https://img.shields.io/pypi/pyversions/pyckingsolver.svg)](https://pypi.org/project/pyckingsolver/)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Build](https://github.com/HamzaYslmn/pyckingsolver/actions/workflows/build.yml/badge.svg)](https://github.com/HamzaYslmn/pyckingsolver/actions)
 
 Pack irregular shapes into bins — rectangles, circles, arbitrary polygons with holes.
@@ -29,20 +29,22 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
-## What's New in 0.2.0 (Breaking)
+## What's New in 0.4.0 (Breaking)
 
-- **`AllowedRotation` is now a dataclass** with `(start_angle, end_angle, mirror)` matching upstream. Mirror is now **per-rotation** instead of a separate item-level flag, so you can mix mirrored and non-mirrored ranges:
-  ```python
-  allowed_rotations=[(0, 0, False), (90, 90, True)]   # 0° normal + 90° mirrored
-  ```
-  The legacy `(start, end)` 2-tuple form and `allow_mirroring=True` keyword still work for back-compat — `allow_mirroring=True` duplicates each rotation entry with `mirror=True`.
-- **`FixedItem` support** — pre-place items the solver must pack around, via `InstanceBuilder.add_fixed_item(bin_id, item_id, (x, y), angle=, mirror=)`. See [Fixed Items](#fixed-items) below.
-- **`SolverParams` dataclass** groups all 30+ solver knobs into one passable object. Kwargs to `Solver.solve()` still work for ad-hoc calls.
-- **`nest()` high-level helper** — pack a flat list of Shapely shapes onto bins in one call, with optional spacing pre-buffer and shape grouping. See [Quick Nest](#quick-nest) below.
-- **`Solution.metrics`** is populated from the solver's output JSON (BinCost, FullWastePercentage, DensityX, …).
-- **`json_output=`** replaces the old `output_path=` kwarg on `Solver.solve()`.
-- The bundled binary is rebuilt against upstream commit `1528db6ea` (2026-04-28), which includes fixed items, free rotations for large items, restored missing-item filtering, PNG export support, the maximum-weight default fix, an updated `shape` dependency, missing try/catch in solver mains, and the `--anchor` option fix (now correctly honors `--anchor 0`).
-- Removed `_extra` forward-compat dicts from `Parameters`, `SolutionItem`, `SolutionBin` — they were unused.
+- **Dropped the inert quality-rule surface.** `add_quality_rule(...)`,
+  `Parameters.quality_rules` and `ItemShape.quality_rule` are removed — the bundled binary
+  never read them from JSON, so they silently did nothing.
+- **Removed the `_extra` forward-compat dicts** from every dataclass. New upstream CLI
+  flags are still reachable via `SolverParams.extra_args`.
+- **New solver passthroughs:** `objective=` (re-run one instance under another objective),
+  `log_path=` / `log_to_stderr=` / `json_search_tree_path=`.
+- **Fixed `Solution.placed_shapes()`** — it double-applied the placement transform; the
+  solver already emits absolute coordinates, so it now returns `item.shapes` unchanged.
+- `AllowedRotation` remains a `(start_angle, end_angle, mirror)` dataclass; the legacy
+  `(start, end)` 2-tuple form and `allow_mirroring=True` keyword still work.
+- Every shape is serialized as `type=polygon` (circles/rectangles included). Feeding the
+  solver native `type:"circle"` crashes it, and native `type:"rectangle"` makes its
+  heuristic non-deterministic; the polygon form is identical geometry with stable output.
 
 ---
 
@@ -139,8 +141,8 @@ b = InstanceBuilder(Objective.BIN_PACKING)
 # Rectangle bin
 b.add_bin_type_rectangle(1200, 600, copies=10, cost=1.0)
 
-# Circle bin
-b.add_bin_type_circle(radius=300, resolution=64)
+# Circle bin (exact native circle — no polygon approximation)
+b.add_bin_type_circle(radius=300)
 
 # Any Shapely polygon
 b.add_bin_type(Polygon([...]))
@@ -255,15 +257,6 @@ b.add_defect(bin_id, scratch, item_defect_minimum_spacing=3.0)
 
 # With defect type label
 b.add_defect(bin_id, scratch, defect_type=1)
-```
-
-### Quality Rules
-
-Restrict certain items to certain zones of the bin:
-
-```python
-b.add_quality_rule([0, 1])        # items with quality_rule=0 can go on areas 0 or 1
-b.add_item_type(shape, copies=2)  # quality_rule=-1 = no restriction (default)
 ```
 
 ### Aspect Ratio (Open Dimension XY)
@@ -672,21 +665,26 @@ solution = Solution.from_json("solution.json")
 
 ```python
 from pyckingsolver import (
-    shapely_to_polygon_json,        # Shapely Polygon → solver JSON dict
-    json_shape_to_shapely,          # solver JSON dict → Shapely Polygon
-    json_shape_with_holes_to_shapely,  # with interior holes
-    elements_to_shapely,            # line-segment + arc elements → Shapely
-    circle_to_polygon,              # circle → polygon approximation
+    shape_to_json,          # Shapely Polygon → solver JSON dict
+    shape_from_json,        # solver JSON dict → Shapely Polygon
+    elements_to_polygon,    # line-segment + arc elements → Shapely Polygon
+    circle_polygon,         # circle → Shapely polygon
+    rectangle_polygon,      # rectangle → Shapely polygon
 )
+from shapely.geometry import Polygon
 
-# Convert arc-based C++ geometry to Shapely
-poly = elements_to_shapely(elements, arc_resolution=64)
+# Export any Shapely polygon to solver JSON (CCW winding enforced automatically)
+data = shape_to_json(Polygon([(0, 0), (50, 0), (25, 40)]))   # {"type": "polygon", ...}
 
-# Approximate circle
-circle = circle_to_polygon(radius=50, center=(100, 100), resolution=64)
+# Parse a solver shape dict back to Shapely
+poly = shape_from_json({"type": "rectangle", "width": 80, "height": 40})
 
-# Export any Shapely polygon back to solver JSON
-data = shapely_to_polygon_json(my_polygon)  # CCW winding enforced automatically
+# Convert arc-based C++ solution geometry to Shapely
+poly = elements_to_polygon(elements, arc_resolution=64)
+
+# Circle / rectangle → Shapely polygon (the form the solver accepts)
+circle = circle_polygon(radius=50, center=(100, 100), resolution=64)
+rect = rectangle_polygon(80, 40)
 ```
 
 ---

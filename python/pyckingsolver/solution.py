@@ -7,7 +7,6 @@ import math
 from pathlib import Path
 from typing import Any
 
-from shapely import affinity
 from shapely.geometry import MultiPolygon, Polygon
 
 from pyckingsolver.geometry import elements_to_polygon
@@ -44,7 +43,6 @@ class Solution:
                 item_area=jb.get("item_area", 0.0),
                 x_min=jb.get("x_min", 0.0), x_max=jb.get("x_max", 0.0),
                 y_min=jb.get("y_min", 0.0), y_max=jb.get("y_max", 0.0),
-                _extra={k: v for k, v in jb.items() if k not in _SBIN_KEYS},
             )
             if "shape" in jb:
                 sb.shape = elements_to_polygon(jb["shape"])
@@ -84,8 +82,12 @@ class Solution:
         return sum(b.copies for b in self.bins)
 
     def placed_shapes(self, item: SolutionItem) -> list[Polygon | MultiPolygon]:
-        """Return item shapes already mirrored, rotated and translated."""
-        return [_transform(s, item) for s in item.shapes]
+        """Return the item's shapes in absolute bin coordinates.
+
+        The solver already emits each shape mirrored, rotated and translated into
+        place, so `item.shapes` are already absolute — this just returns a copy.
+        """
+        return list(item.shapes)
 
     def mark_fixed_items(self, bin_types: list[BinType], tol: float = 1e-6) -> None:
         """Set `is_fixed=True` for placements matching the bin's `fixed_items`."""
@@ -110,16 +112,10 @@ def _parse_item(ji: dict) -> SolutionItem:
         angle=ji.get("angle", 0.0),
         mirror=ji.get("mirror", False),
         is_fixed=ji.get("is_fixed", False),
-        _extra={k: v for k, v in ji.items() if k not in _SITEM_KEYS},
     )
     for js in ji.get("item_shapes", []):
         si.shapes.append(_parse_defect_shape(js))
     return si
-
-
-_SITEM_KEYS = {"id", "x", "y", "angle", "mirror", "is_fixed", "item_shapes"}
-_SBIN_KEYS = {"id", "copies", "item_area", "x_min", "x_max", "y_min", "y_max",
-              "shape", "defects", "items"}
 
 
 def _parse_defect_shape(jd: dict) -> Polygon:
@@ -130,16 +126,6 @@ def _parse_defect_shape(jd: dict) -> Polygon:
         return exterior
     rings = [list(elements_to_polygon(h).exterior.coords) for h in holes]
     return Polygon(exterior.exterior.coords, rings)
-
-
-def _transform(geom, item: SolutionItem):
-    if item.mirror:
-        geom = affinity.scale(geom, xfact=-1, yfact=1, origin=(0, 0))
-    if item.angle:
-        geom = affinity.rotate(geom, item.angle, origin=(0, 0))
-    if item.x or item.y:
-        geom = affinity.translate(geom, xoff=item.x, yoff=item.y)
-    return geom
 
 
 def _matches(it: SolutionItem, fi: FixedItem, tol: float) -> bool:
@@ -154,9 +140,6 @@ def _bin_to_dict(sb: SolutionBin) -> dict[str, Any]:
     out: dict[str, Any] = {"id": sb.bin_type_id, "copies": sb.copies}
     if sb.items:
         out["items"] = [_item_to_dict(it) for it in sb.items]
-    if sb._extra:
-        for k, v in sb._extra.items():
-            out.setdefault(k, v)
     return out
 
 
@@ -167,8 +150,5 @@ def _item_to_dict(it: SolutionItem) -> dict[str, Any]:
     }
     if it.is_fixed:
         out["is_fixed"] = True
-    if it._extra:
-        for k, v in it._extra.items():
-            out.setdefault(k, v)
     return out
 # __PYCK_END__

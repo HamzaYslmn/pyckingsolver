@@ -1,6 +1,7 @@
 """pyckingsolver — Python wrapper for the C++ packingsolver (irregular).
 
-See README.md for usage. v0.2.0 introduces breaking API changes.
+See README.md for usage. v0.4.0 drops the inert quality-rule surface and the
+`_extra` forward-compat dicts.
 """
 
 from pyckingsolver.geometry import (
@@ -28,7 +29,7 @@ from pyckingsolver.types import (
     SolutionItem,
 )
 
-__version__ = "0.3.5"
+__version__ = "0.4.0"
 
 __all__ = [
     "__version__",
