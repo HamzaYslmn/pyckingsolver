@@ -1,17 +1,28 @@
-"""Shapely <-> packingsolver JSON shape conversions."""
+"""Shapely <-> packingsolver JSON shape conversions.
+
+Every shape is carried as a Shapely `Polygon` (holes as interior rings). Circles and
+rectangles are discretized to polygons rather than emitted as native ``type:"circle"`` /
+``type:"rectangle"``: the bundled binary crashes on a native circle, and feeding a native
+rectangle makes its heuristic non-deterministic (the polygon form is geometrically
+identical and gives stable, reproducible packings).
+"""
 
 from __future__ import annotations
 
 import math
 from typing import Any
 
-from shapely.geometry import Point, Polygon
+from shapely.geometry import MultiPolygon, Point, Polygon
 
 ARC_RESOLUTION = 64
 
 
-def shape_from_json(data: dict[str, Any], arc_resolution: int = ARC_RESOLUTION) -> Polygon:
-    """Parse a packingsolver shape dict into a Shapely Polygon (with holes)."""
+# MARK: JSON -> shape ─────────────────────────────────────────────────────────
+
+
+def shape_from_json(data: dict[str, Any],
+                    arc_resolution: int = ARC_RESOLUTION) -> Polygon:
+    """Parse a packingsolver shape dict into a Shapely `Polygon` (holes as rings)."""
     exterior = _exterior_from_json(data, arc_resolution)
     holes = data.get("holes") or []
     if not holes:
@@ -22,13 +33,18 @@ def shape_from_json(data: dict[str, Any], arc_resolution: int = ARC_RESOLUTION) 
 
 
 def _exterior_from_json(data: dict, arc_resolution: int) -> Polygon:
+    """Parse any single ring (exterior or hole) into a Shapely Polygon."""
     stype = data.get("type", "general")
     if stype == "circle":
-        return circle_polygon(data["radius"], resolution=arc_resolution)
+        return circle_polygon(data["radius"],
+                              (data.get("x", 0.0), data.get("y", 0.0)),
+                              resolution=arc_resolution)
     if stype == "rectangle":
         w, h = data.get("width"), data.get("height")
-        return Polygon() if w is None or h is None else Polygon(
-            [(0, 0), (w, 0), (w, h), (0, h)])
+        if w is None or h is None:
+            return Polygon()
+        ox, oy = data.get("x", 0.0), data.get("y", 0.0)
+        return Polygon([(ox, oy), (ox + w, oy), (ox + w, oy + h), (ox, oy + h)])
     if stype == "polygon" or "vertices" in data:
         return Polygon([(v["x"], v["y"]) for v in data["vertices"]])
     if stype == "general" or "elements" in data:
@@ -68,26 +84,35 @@ def _sample_arc(coords: list, el: dict, resolution: int) -> None:
     else:
         xc, yc = el["xc"], el["yc"]
     ccw = el.get("orientation", "Anticlockwise") != "Clockwise"
-    r = math.hypot(xs - xc, ys - yc)
     a0 = math.atan2(ys - yc, xs - xc)
     a1 = math.atan2(ye - yc, xe - xc)
+    # start == end means a full turn, not a zero arc.
     if ccw and a1 <= a0:
         a1 += 2 * math.pi
     elif not ccw and a1 >= a0:
         a1 -= 2 * math.pi
     n = max(4, int(abs(a1 - a0) / (2 * math.pi) * resolution))
-    step = (a1 - a0) / n
-    for i in range(n):
-        a = a0 + i * step
-        coords.append((xc + r * math.cos(a), yc + r * math.sin(a)))
+    # Rotate the start vector incrementally instead of calling cos/sin per vertex.
+    cs, sn = math.cos((a1 - a0) / n), math.sin((a1 - a0) / n)
+    vx, vy = xs - xc, ys - yc
+    for _ in range(n):
+        coords.append((xc + vx, yc + vy))
+        vx, vy = vx * cs - vy * sn, vx * sn + vy * cs
+
+
+# MARK: shape -> JSON ─────────────────────────────────────────────────────────
 
 
 def shape_to_json(geom: Polygon) -> dict[str, Any]:
-    """Serialize a Shapely Polygon (with optional holes) to packingsolver JSON.
+    """Serialize a Shapely `Polygon` (with optional holes) to packingsolver JSON.
 
-    Always emits `type=polygon`. Closing duplicate vertex is stripped; CCW
-    winding is enforced for both exterior and holes.
+    Emits ``type=polygon`` with the closing vertex stripped and CCW winding enforced.
+    A bare `MultiPolygon` has no single shape representation and is rejected.
     """
+    if isinstance(geom, MultiPolygon):
+        raise TypeError(
+            "shape_to_json: got a MultiPolygon, which has no single packingsolver "
+            "shape. Split it into separate item shapes or pass a single Polygon.")
     out: dict[str, Any] = {"type": "polygon",
                            "vertices": _ring_vertices(geom.exterior.coords)}
     if geom.interiors:
@@ -107,21 +132,23 @@ def _ring_vertices(coords) -> list[dict[str, float]]:
 
 
 def _signed_area(pts: list[tuple[float, float]]) -> float:
-    n = len(pts)
-    return 0.5 * sum(pts[i][0] * pts[(i + 1) % n][1]
-                     - pts[(i + 1) % n][0] * pts[i][1]
-                     for i in range(n))
+    # Shoelace over consecutive edges, wrapping the last vertex to the first.
+    return 0.5 * sum(x0 * y1 - x1 * y0
+                     for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]))
+
+
+# MARK: convenience builders ──────────────────────────────────────────────────
 
 
 def circle_polygon(radius: float, center: tuple[float, float] = (0.0, 0.0),
                    resolution: int = ARC_RESOLUTION) -> Polygon:
-    """Approximate a circle as a regular polygon."""
+    """Approximate a circle as a regular polygon (the form the solver accepts)."""
     if not radius or radius <= 0:
         return Polygon()
     return Point(*center).buffer(float(radius), resolution=resolution)
 
 
 def rectangle_polygon(width: float, height: float) -> Polygon:
-    """Build an axis-aligned rectangle polygon at origin."""
+    """Build an axis-aligned rectangle Shapely polygon at origin."""
     return Polygon([(0, 0), (width, 0), (width, height), (0, height)])
 # __PYCK_END__

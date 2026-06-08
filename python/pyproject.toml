@@ -1,10 +1,10 @@
 [project]
 name = "pyckingsolver"
-version = "0.3.6"
+version = "0.4.0"
 description = "Shapely-based Python interface for PackingSolver — 2D irregular bin packing & nesting"
 requires-python = ">=3.10"
 readme = {file = "../README.md", content-type = "text/markdown"}
-license = {text = "AGPL-3.0-or-later"}
+license = {text = "MIT"}
 authors = [
     {name = "Hamza Yesilmen", email = "resmiyslmn@gmail.com"},
 ]
@@ -17,7 +17,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Manufacturing",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
