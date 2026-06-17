@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `dd4691ae5` — 2026-05-07).
-Python wrapper version: `0.3.5` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `da2af179b` — 2026-06-17).
+Python wrapper version: `0.4.1` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -19,6 +19,24 @@ When bumping the Python wrapper version, update all current-version tags:
 - Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
+
+---
+
+## MARK: Recent Upstream Changes (2026-05-07 → 2026-06-17)
+
+Pulled `713d0dbea` → `da2af179b` (7 commits). Bundled binary rebuilt + re-bundled.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `f0fd6a599` | **irregular: widen ID types + input-scale overflow guards** | **C++ robustness — the reason to rebuild.** `ItemTypeId` / `GroupId` / `BinTypeId` / `DefectId` widened `int16_t`→`int32_t` (cap 32767 → ~2.1B). `InstanceBuilder::build()` now throws a clean `runtime_error` on `ItemPos`/`BinPos` overflow (cap 100M bins) instead of silently wrapping → `0xC0000005` access-violation crash. Directly hardens the crash class seen in `_crashes/`. No API change. |
+| `c00753cd7` | **Add memory resource limits (default unlimited) (#384)** | New CLI flag `--memory-limit <MiB>` (`Megabytes`, default `0` = unlimited). Exposed in wrapper as `SolverParams.memory_limit_megabytes` (`None`/`0` = unlimited). Opt-in OOM guard. |
+| `25c10a736` | Integrate `write_json_output` parameter | Passing `--output` now sets `write_json_output = true`, gating the metrics JSON (`Parameters` / `IntermediaryOutputs` / `Output`) behind it. Wrapper always passes `--output`, so the metrics file is **byte-structurally unchanged** (verified old-vs-new: same 3 top keys, same 16 `Output.Solution` keys). Perf-only when `--output` omitted. Backward compatible. |
+| `0d6f163e2` | Move `thread_pool.hpp` to `src/` + consolidate wrapper | Internal — irregular `optimize.cpp` now launches its algorithms via a shared `thread_pool` / `run(tasks, parallel?)`. Dead `wrapper`/`wrapper_impl` template removed from `common.hpp`. Same algorithm auto-selection + priority order preserved. No API change. |
+| `f51d49843` | Refactor stack building code | rectangleguillotine internal — no irregular impact. |
+| `1069025e5` | Implement `set_number_of_stages_unlimited` | rectangleguillotine `instance_builder` — no irregular impact. |
+| `da2af179b` | Add `dynamic_programming_infinite_copies_array` algorithm | **rectangleguillotine-only new algorithm** — the wrapper ships only `packingsolver_irregular`, so it is not reachable and not adopted. |
+
+**Wrapper impact**: one additive change — `SolverParams.memory_limit_megabytes` → `--memory-limit`. New upstream algorithms are all rectangleguillotine; the irregular module gained only robustness (ID widening, overflow guards) + the memory limit. Rebuild + re-bundle `packingsolver_irregular.exe` to get the crash hardening (done for this bump).
 
 ---
 
@@ -135,6 +153,7 @@ All 11 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 |---|---|---|---|
 | `time_limit` | ✅ | ✅ | |
 | `verbosity_level` | ✅ | ✅ | |
+| `memory_limit_megabytes` | ✅ | ✅ | NEW (`--memory-limit`, MiB). `None`/`0` = unlimited. Opt-in OOM guard. |
 | `optimization_mode` | ✅ | ✅ | Anytime / NotAnytime / etc. |
 | `use_tree_search` | ✅ | ✅ | |
 | `use_local_search` | ✅ | ✅ | NEW — local search algorithm |

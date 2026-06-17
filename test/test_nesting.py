@@ -23,8 +23,8 @@ _OUT = Path(__file__).resolve().parent
 
 def _find_solver() -> str:
     """Find the solver binary — bundled (pip install) or local build."""
-    from pyckingsolver.solver import Solver
-    return str(Solver._find_binary("irregular"))
+    from pyckingsolver import Solver
+    return str(Solver().binary)
 
 
 def _solve(instance: Instance, time_limit: int = 15) -> Solution:
@@ -113,12 +113,8 @@ def test_holes_with_fillers():
     b.add_bin_type_rectangle(800, 400)
 
     # Frame 200x150 with 120x80 hole -> filler 110x70 fits inside
-    b.add_item_type(_rect(200, 150).difference(_rect(120, 80).buffer(0, join_style="mitre")
-                    .__class__([(40, 35), (160, 35), (160, 115), (40, 115)])), copies=2)
-    # Simpler: just build with explicit hole coords
     frame = Polygon([(0, 0), (200, 0), (200, 150), (0, 150)],
                     [[(40, 35), (160, 35), (160, 115), (40, 115)]])
-    b._item_types.clear()
     b.add_item_type(frame, copies=2)                     # green frame
     b.add_item_type(_rect(110, 70), copies=2)            # red filler for frame hole
     b.add_item_type(_ring(60, 35), copies=2)             # blue ring (hole R=35)

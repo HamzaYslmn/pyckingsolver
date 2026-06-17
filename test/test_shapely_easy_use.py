@@ -221,8 +221,10 @@ def ex_lp_and_anchor():
     sol = _solver.solve(
         b.build(), time_limit=10,
         linear_programming_solver="Highs",
-        anchor_to_corner=True,
-        anchor_to_corner_corner=Corner.BOTTOM_LEFT,
+        anchor=True,
+        anchor_x_weight=1.0,  # +left
+        anchor_y_weight=1.0,  # +bottom  → bottom-left
+        leftover_corner=Corner.BOTTOM_LEFT,
     )
     _print_result("LP=Highs + ANCHOR post-processing", sol)
 
