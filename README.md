@@ -29,6 +29,16 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.4.1
+
+- **Bundled solver rebuilt at upstream `da2af179b`.** Irregular ID types widened
+  `int16`→`int32` and input-scale overflow guards added — pathological instances now fail
+  with a clear error instead of an access-violation crash.
+- **New `memory_limit_megabytes` knob** (`--memory-limit`, MiB; `None`/`0` = unlimited) —
+  optional RAM cap so the solver fails cleanly rather than OOM-crashing.
+
+---
+
 ## What's New in 0.4.0 (Breaking)
 
 - **Dropped the inert quality-rule surface.** `add_quality_rule(...)`,

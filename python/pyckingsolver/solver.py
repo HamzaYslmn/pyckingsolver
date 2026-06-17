@@ -33,6 +33,7 @@ class SolverParams:
     time_limit: float = 60.0
     verbosity_level: int = 0
     seed: int | None = None  # binary currently ignores --seed (marked "not used" upstream)
+    memory_limit_megabytes: int | None = None  # None/0 = unlimited; caps RAM to fail clean instead of OOM-crashing
     only_write_at_the_end: bool = False
     log_path: str | None = None
     log_to_stderr: bool = False
@@ -234,6 +235,7 @@ _VALUE_FLAGS = {
     "linear_programming_solver": "--linear-programming-solver",
     "objective": "--objective",
     "leftover_corner": "--leftover-corner",
+    "memory_limit_megabytes": "--memory-limit",
     "log_path": "--log",
     "json_search_tree_path": "--json-search-tree",
     "anchor_x_weight": "--anchor-x-weight",
