@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `da2af179b` — 2026-06-17).
-Python wrapper version: `0.4.1` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `c2c1f1f42` — 2026-06-27).
+Python wrapper version: `0.5.0` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -19,6 +19,31 @@ When bumping the Python wrapper version, update all current-version tags:
 - Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
+
+---
+
+## MARK: Recent Upstream Changes (2026-06-17 → 2026-06-27)
+
+Pulled `da2af179b` → `c2c1f1f42` (30 commits). Bundled binary rebuilt + re-bundled.
+
+Mostly an internal refactor: `branching_scheme*` files renamed to `tree_search*`
+and each domain gained `tree_search()` / `tree_search_maximal_spaces()` wrappers
+that simplify `optimize.cpp`. New algorithms (`tree_search_maximal_spaces`,
+rectangleguillotine block-generation rewrite, cut-thickness) land in **other
+domains** — the wrapper ships only `packingsolver_irregular`, so they aren't
+reachable. Irregular gained the integrated `sequential_feasibility` path.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `dbed14598` | irregular: integrate `sequential_feasibility` into tree/local search | **CLI breaking.** The 4 `--*sequential-feasibility*` toggles were **removed** — it now runs automatically inside tree_search/local_search. Wrapper drops `use_sequential_feasibility` + the 3 `sequential_feasibility_use_*` fields. |
+| `6f32dca63` / `a9da85f9a` | SolutionPool labels + `update_bounds` | Internal. `algorithm_formatter` output JSON keys (3 top / 16 `Output.Solution`) **unchanged** — wrapper parsing untouched. |
+| `843dd8d85` | irregular: add `tree_search()`, simplify `optimize.cpp` | Internal restructure, same auto-selection. The 4 `*-subproblem-queue-size` flags **renamed** → `*-subproblem-tree-search-queue-size`. Wrapper fields + flag strings renamed to match. |
+
+**Wrapper impact**: CLI-only sync (no JSON-format change). Removed 4 dead
+`sequential_feasibility` knobs; renamed 4 `*_subproblem_queue_size`
+→ `*_subproblem_tree_search_queue_size`. Input/output JSON byte-structurally
+unchanged. Default/auto solves unaffected. Rebuild + re-bundle
+`packingsolver_irregular.exe` (done for this bump).
 
 ---
 
@@ -158,10 +183,6 @@ All 11 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 | `use_tree_search` | ✅ | ✅ | |
 | `use_local_search` | ✅ | ✅ | NEW — local search algorithm |
 | `use_milp_raster` | ✅ | ✅ | NEW — MILP raster algorithm |
-| `use_sequential_feasibility` | ✅ | ✅ | NEW — sequential feasibility algorithm |
-| `sequential_feasibility_use_tree_search` | ✅ | ✅ | NEW — sub-problem control |
-| `sequential_feasibility_use_local_search` | ✅ | ✅ | NEW — sub-problem control |
-| `sequential_feasibility_use_milp_raster` | ✅ | ✅ | NEW — sub-problem control |
 | `use_sequential_single_knapsack` | ✅ | ✅ | |
 | `use_sequential_value_correction` | ✅ | ✅ | |
 | `use_column_generation` | ✅ | ✅ | |
@@ -350,10 +371,10 @@ For typical CAD nesting (100+ unique parts, copies=1, items fit ~20+ per bin):
 | `many_item_type_copies_factor` | 1 | Same. Not exposed. |
 | `initial_maximum_approximation_ratio` | 0.20 | NFP approximation. Lower = more accurate, slower. |
 | `not_anytime_tree_search_queue_size` | 512 | Tree search beam width in NotAnytime mode |
-| `not_anytime_sequential_single_knapsack_subproblem_queue_size` | 512 | SSK subproblem beam |
-| `not_anytime_dichotomic_search_subproblem_queue_size` | 128 | Dichotomic search beam |
-| `sequential_value_correction_subproblem_queue_size` | 128 | SVC inner knapsack beam |
-| `column_generation_subproblem_queue_size` | 128 | CG inner knapsack beam |
+| `not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size` | 512 | SSK subproblem beam |
+| `not_anytime_dichotomic_search_subproblem_tree_search_queue_size` | 128 | Dichotomic search beam |
+| `sequential_value_correction_subproblem_tree_search_queue_size` | 128 | SVC inner knapsack beam |
+| `column_generation_subproblem_tree_search_queue_size` | 128 | CG inner knapsack beam |
 
 ---
 
