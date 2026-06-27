@@ -52,10 +52,8 @@ class SolverParams:
     use_sequential_value_correction: bool | None = None
     use_column_generation: bool | None = None
     use_dichotomic_search: bool | None = None
-    use_sequential_feasibility: bool | None = None
-    sequential_feasibility_use_tree_search: bool | None = None
-    sequential_feasibility_use_local_search: bool | None = None
-    sequential_feasibility_use_milp_raster: bool | None = None
+    # sequential-feasibility toggles were dropped upstream — it now runs
+    # automatically inside tree_search/local_search, no flag to expose.
 
     # LP
     # Default "Highs" — HiGHS is always compiled in. The upstream C++ default
@@ -80,13 +78,13 @@ class SolverParams:
     # Tuning (rarely needed; defaults are good)
     initial_maximum_approximation_ratio: float | None = None
     maximum_approximation_ratio_factor: float | None = None
-    sequential_value_correction_subproblem_queue_size: int | None = None
-    column_generation_subproblem_queue_size: int | None = None
+    sequential_value_correction_subproblem_tree_search_queue_size: int | None = None
+    column_generation_subproblem_tree_search_queue_size: int | None = None
     not_anytime_maximum_approximation_ratio: float | None = None
     not_anytime_tree_search_queue_size: int | None = None
-    not_anytime_sequential_single_knapsack_subproblem_queue_size: int | None = None
+    not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size: int | None = None
     not_anytime_sequential_value_correction_number_of_iterations: int | None = None
-    not_anytime_dichotomic_search_subproblem_queue_size: int | None = None
+    not_anytime_dichotomic_search_subproblem_tree_search_queue_size: int | None = None
 
 
 # MARK: Solver ───────────────────────────────────────────────────────────────
@@ -224,10 +222,6 @@ _BOOL_VALUE_FLAGS = {
     "use_sequential_value_correction": "--use-sequential-value-correction",
     "use_column_generation": "--use-column-generation",
     "use_dichotomic_search": "--use-dichotomic-search",
-    "use_sequential_feasibility": "--use-sequential-feasibility",
-    "sequential_feasibility_use_tree_search": "--sequential-feasibility-use-tree-search",
-    "sequential_feasibility_use_local_search": "--sequential-feasibility-use-local-search",
-    "sequential_feasibility_use_milp_raster": "--sequential-feasibility-use-milp-raster",
 }
 
 _VALUE_FLAGS = {
@@ -245,19 +239,19 @@ _VALUE_FLAGS = {
     "seed": "--seed",
     "initial_maximum_approximation_ratio": "--initial-maximum-approximation-ratio",
     "maximum_approximation_ratio_factor": "--maximum-approximation-ratio-factor",
-    "sequential_value_correction_subproblem_queue_size":
-        "--sequential-value-correction-subproblem-queue-size",
-    "column_generation_subproblem_queue_size":
-        "--column-generation-subproblem-queue-size",
+    "sequential_value_correction_subproblem_tree_search_queue_size":
+        "--sequential-value-correction-subproblem-tree-search-queue-size",
+    "column_generation_subproblem_tree_search_queue_size":
+        "--column-generation-subproblem-tree-search-queue-size",
     "not_anytime_maximum_approximation_ratio":
         "--not-anytime-maximum-approximation-ratio",
     "not_anytime_tree_search_queue_size": "--not-anytime-tree-search-queue-size",
-    "not_anytime_sequential_single_knapsack_subproblem_queue_size":
-        "--not-anytime-sequential-single-knapsack-subproblem-queue-size",
+    "not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size":
+        "--not-anytime-sequential-single-knapsack-subproblem-tree-search-queue-size",
     "not_anytime_sequential_value_correction_number_of_iterations":
         "--not-anytime-sequential-value-correction-number-of-iterations",
-    "not_anytime_dichotomic_search_subproblem_queue_size":
-        "--not-anytime-dichotomic-search-subproblem-queue-size",
+    "not_anytime_dichotomic_search_subproblem_tree_search_queue_size":
+        "--not-anytime-dichotomic-search-subproblem-tree-search-queue-size",
 }
 
 

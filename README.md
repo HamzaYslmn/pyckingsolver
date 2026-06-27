@@ -29,6 +29,16 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.5.0
+
+- **Bundled solver rebuilt at upstream `c2c1f1f42`.** Mostly an internal
+  `branching_scheme`→`tree_search` refactor across domains; irregular now folds
+  `sequential_feasibility` into tree/local search automatically.
+- **CLI sync (breaking only for tuning knobs).** Upstream removed the four
+  `use_sequential_feasibility` / `sequential_feasibility_use_*` toggles and
+  renamed `*_subproblem_queue_size` → `*_subproblem_tree_search_queue_size`.
+  `SolverParams` matches the new binary; default/auto solves are unaffected.
+
 ## What's New in 0.4.1
 
 - **Bundled solver rebuilt at upstream `da2af179b`.** Irregular ID types widened
@@ -526,8 +536,8 @@ solution = solver.solve(
     time_limit=120,
     initial_maximum_approximation_ratio=0.20,
     maximum_approximation_ratio_factor=0.75,
-    sequential_value_correction_subproblem_queue_size=128,
-    column_generation_subproblem_queue_size=128,
+    sequential_value_correction_subproblem_tree_search_queue_size=128,
+    column_generation_subproblem_tree_search_queue_size=128,
     not_anytime_tree_search_queue_size=512,
 )
 ```
