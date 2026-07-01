@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `c2c1f1f42` — 2026-06-27).
-Python wrapper version: `0.5.0` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `8ea3129e6` — 2026-06-30).
+Python wrapper version: `0.6.0` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -19,6 +19,26 @@ When bumping the Python wrapper version, update all current-version tags:
 - Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
+
+---
+
+## MARK: Recent Upstream Changes (2026-06-27 → 2026-06-30)
+
+Pulled `c2c1f1f42` → `8ea3129e6` (7 commits). Bundled binary rebuilt + re-bundled.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `e72df6672` | irregular, rectangle: `leftover_corner` → `leftover_mode` for BinPackingWithLeftovers | **API + CLI + JSON breaking.** Enum `Corner` → `LeftoverMode`, gains edge modes `Left`/`Right`/`Bottom`/`Top`; instance JSON key `leftover_corner` → `leftover_mode`; CLI flag `--leftover-corner` → `--leftover-mode`. Output JSON unchanged (`LeftoverValue` preserved). |
+| `39a0b5a67` / `54766c85f` | rectangleguillotine: `sort_subplates` post-processing | Other domain — not reachable from `packingsolver_irregular`. |
+| `7e43cca72` / `8ea3129e6` | Update `shape` / `knapsacksolver` deps | Build only. |
+| `813ab4a3d` | rectangleguillotine: rename test data dirs | Data only. |
+| `34ef5edd5` | Fix CGH label in `column_generation_strips_horizontal` | Log label only. |
+
+**Wrapper impact**: rename-only sync, breaking for callers → v0.6.0. `Corner` →
+`LeftoverMode` (+4 edge values), `Parameters.leftover_corner` → `leftover_mode`,
+`set_leftover_corner()` → `set_leftover_mode()`, `SolverParams.leftover_corner`
+→ `leftover_mode` (`--leftover-mode`), instance JSON key `leftover_corner` →
+`leftover_mode`. Rebuild + re-bundle `packingsolver_irregular.exe`.
 
 ---
 
@@ -166,7 +186,7 @@ Pulled `713d0dbea` → `da2af179b` (7 commits). Bundled binary rebuilt + re-bund
 |---|---|---|---|
 | `item_item_minimum_spacing` | ✅ | ✅ | |
 | `open_dimension_xy_aspect_ratio` | ✅ | ✅ | |
-| `leftover_corner` | ✅ | ✅ | `Corner` enum |
+| `leftover_mode` | ✅ | ✅ | `LeftoverMode` enum (4 corners + 4 edges) |
 | `quality_rules` | ✅ | ✅ | `list[list[int]]` |
 | `scale_value` | ❌ | ✅ | Auto-computed in C++ `build()`, not in JSON |
 
@@ -193,7 +213,7 @@ All 11 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 | `anchor_y_weight` | ✅ | ✅ | Vertical slide weight (+bottom, -top, 0=off) |
 | `item_item_minimum_spacing` (CLI override) | ✅ | ✅ | |
 | `item_bin_minimum_spacing` (CLI override) | ✅ | ✅ | |
-| `leftover_corner` (CLI override) | ✅ | ✅ | |
+| `leftover_mode` (CLI override) | ✅ | ✅ | |
 | `bin_unweighted` | ✅ | ✅ | |
 | `unweighted` | ✅ | ✅ | |
 | `continuous_rotations` | ✅ | ✅ | NEW — set all items to continuous rotation |
@@ -228,7 +248,7 @@ These exist in `OptimizeParameters` but have **no CLI flag** — cannot be set f
 ```
 python/pyckingsolver/
 ├── __init__.py       # Public API re-exports + __version__
-├── types.py          # Dataclasses + enums (Objective, Corner, AllowedRotation, FixedItem, …)
+├── types.py          # Dataclasses + enums (Objective, LeftoverMode, AllowedRotation, FixedItem, …)
 ├── geometry.py       # Shapely ↔ PackingSolver JSON conversion
 ├── instance.py       # Instance (immutable) + InstanceBuilder (fluent)
 ├── solution.py       # Solution parsing + Shapely transform + mark_fixed_items()
