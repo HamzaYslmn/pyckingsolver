@@ -29,6 +29,15 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.6.0
+
+- **Bundled solver rebuilt at upstream `8ea3129e6`.**
+- **`Corner` → `LeftoverMode` (breaking rename, mirrors upstream).**
+  `Parameters.leftover_corner` → `leftover_mode`, `set_leftover_corner()` →
+  `set_leftover_mode()`, `SolverParams.leftover_corner` → `leftover_mode`.
+  New edge modes: `LEFT`, `RIGHT`, `BOTTOM`, `TOP` — reserve a full-width /
+  full-height strip instead of a corner rectangle.
+
 ## What's New in 0.5.0
 
 - **Bundled solver rebuilt at upstream `c2c1f1f42`.** Mostly an internal
@@ -286,23 +295,24 @@ b = InstanceBuilder(Objective.OPEN_DIMENSION_XY)
 b.set_open_dimension_xy_aspect_ratio(1.5)  # enforce width/height <= 1.5
 ```
 
-### Leftover Corner
+### Leftover Mode
 
-For `BIN_PACKING_WITH_LEFTOVERS`, set the reference corner for scrap:
+For `BIN_PACKING_WITH_LEFTOVERS`, set the reference corner/edge for scrap:
 
 ```python
-from pyckingsolver import Corner
+from pyckingsolver import LeftoverMode
 
-b.set_leftover_corner(Corner.BOTTOM_LEFT)   # default
-b.set_leftover_corner(Corner.TOP_RIGHT)
+b.set_leftover_mode(LeftoverMode.BOTTOM_LEFT)   # default
+b.set_leftover_mode(LeftoverMode.TOP_RIGHT)
+b.set_leftover_mode(LeftoverMode.RIGHT)         # edge: full-height strip
 ```
 
-Corners accept all C++ naming formats:
+Modes accept all C++ naming formats:
 
 ```python
-Corner("BottomLeft")    # PascalCase (canonical)
-Corner("bl")            # abbreviation
-Corner("bottom-left")   # kebab-case
+LeftoverMode("BottomLeft")    # PascalCase (canonical)
+LeftoverMode("bl")            # abbreviation
+LeftoverMode("bottom-left")   # kebab-case
 ```
 
 ---
@@ -434,7 +444,7 @@ b.add_bin_type(offcut)
 ## Solver
 
 ```python
-from pyckingsolver import Solver, Corner
+from pyckingsolver import Solver, LeftoverMode
 
 # Auto-discover bundled binary
 solver = Solver()
@@ -506,7 +516,7 @@ solution = solver.solve(
     time_limit=60,
     item_item_minimum_spacing=3.0,          # override kerf gap
     item_bin_minimum_spacing=5.0,           # override edge clearance
-    leftover_corner=Corner.TOP_RIGHT,       # override scrap corner
+    leftover_mode=LeftoverMode.TOP_RIGHT,   # override scrap corner/edge
     bin_unweighted=True,                    # set bin costs to areas
     unweighted=True,                        # set item profits to areas
 )

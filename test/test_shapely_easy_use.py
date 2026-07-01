@@ -11,7 +11,7 @@ import math
 
 from shapely.geometry import Point, Polygon
 
-from pyckingsolver import InstanceBuilder, Objective, Solver, Corner
+from pyckingsolver import InstanceBuilder, Objective, Solver, LeftoverMode
 
 _solver = Solver()  # reuse singleton — avoids binary search per call
 _SEP = "-" * 55
@@ -141,7 +141,7 @@ def ex_variable_bins():
 def ex_leftovers():
     """Bin packing that considers reusable leftover material."""
     b = InstanceBuilder(Objective.BIN_PACKING_WITH_LEFTOVERS)
-    b.set_leftover_corner(Corner.BOTTOM_LEFT)
+    b.set_leftover_mode(LeftoverMode.BOTTOM_LEFT)
     b.add_bin_type_rectangle(300, 200, copies=5)
 
     b.add_item_type_rectangle(100, 80, copies=3)
@@ -224,7 +224,7 @@ def ex_lp_and_anchor():
         anchor=True,
         anchor_x_weight=1.0,  # +left
         anchor_y_weight=1.0,  # +bottom  → bottom-left
-        leftover_corner=Corner.BOTTOM_LEFT,
+        leftover_mode=LeftoverMode.BOTTOM_LEFT,
     )
     _print_result("LP=Highs + ANCHOR post-processing", sol)
 

@@ -13,7 +13,7 @@ from typing import Any
 
 from pyckingsolver.instance import Instance
 from pyckingsolver.solution import Solution
-from pyckingsolver.types import Corner, Objective
+from pyckingsolver.types import LeftoverMode, Objective
 
 # MARK: SolverParams ─────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ class SolverParams:
     # Instance-level CLI overrides
     item_item_minimum_spacing: float | None = None
     item_bin_minimum_spacing: float | None = None
-    leftover_corner: Corner | str | None = None
+    leftover_mode: LeftoverMode | str | None = None
     bin_unweighted: bool = False
     unweighted: bool = False
     continuous_rotations: bool = False
@@ -190,7 +190,7 @@ def _build_cmd(binary: Path, inp: Path, sol: Path, metrics: Path,
     for attr, flag in _VALUE_FLAGS.items():
         v = getattr(sp, attr)
         if v is not None:
-            cmd += [flag, v.value if isinstance(v, (Corner, Objective)) else str(v)]
+            cmd += [flag, v.value if isinstance(v, (LeftoverMode, Objective)) else str(v)]
 
     # Presence-only bool flags.
     if sp.log_to_stderr:
@@ -228,7 +228,7 @@ _VALUE_FLAGS = {
     "optimization_mode": "--optimization-mode",
     "linear_programming_solver": "--linear-programming-solver",
     "objective": "--objective",
-    "leftover_corner": "--leftover-corner",
+    "leftover_mode": "--leftover-mode",
     "memory_limit_megabytes": "--memory-limit",
     "log_path": "--log",
     "json_search_tree_path": "--json-search-tree",

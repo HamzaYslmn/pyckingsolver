@@ -58,12 +58,16 @@ _OBJ_ALIASES = {
 }
 
 
-class Corner(str, enum.Enum):
-    """Reference corner for leftover/anchor calculations."""
+class LeftoverMode(str, enum.Enum):
+    """Reference corner/edge for leftover/anchor calculations."""
     BOTTOM_LEFT = "BottomLeft"
     BOTTOM_RIGHT = "BottomRight"
     TOP_LEFT = "TopLeft"
     TOP_RIGHT = "TopRight"
+    LEFT = "Left"
+    RIGHT = "Right"
+    BOTTOM = "Bottom"
+    TOP = "Top"
 
     @classmethod
     def _missing_(cls, value):
@@ -71,7 +75,10 @@ class Corner(str, enum.Enum):
             v = {"bl": "BottomLeft", "br": "BottomRight",
                  "tl": "TopLeft", "tr": "TopRight",
                  "bottom-left": "BottomLeft", "bottom-right": "BottomRight",
-                 "top-left": "TopLeft", "top-right": "TopRight"}.get(value)
+                 "top-left": "TopLeft", "top-right": "TopRight",
+                 "l": "Left", "r": "Right", "b": "Bottom", "t": "Top",
+                 "left": "Left", "right": "Right",
+                 "bottom": "Bottom", "top": "Top"}.get(value)
             if v:
                 return cls(v)
         return None
@@ -145,7 +152,7 @@ class Parameters:
     """Global problem-level parameters."""
     item_item_minimum_spacing: float = 0.0
     open_dimension_xy_aspect_ratio: float = -1.0
-    leftover_corner: Corner = Corner.BOTTOM_LEFT
+    leftover_mode: LeftoverMode = LeftoverMode.BOTTOM_LEFT
 
 
 @dataclass

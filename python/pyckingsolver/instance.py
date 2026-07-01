@@ -18,11 +18,11 @@ from pyckingsolver.geometry import (
 from pyckingsolver.types import (
     AllowedRotation,
     BinType,
-    Corner,
     Defect,
     FixedItem,
     ItemShape,
     ItemType,
+    LeftoverMode,
     Objective,
     Parameters,
     ShapeLike,
@@ -98,8 +98,8 @@ class InstanceBuilder:
         self._params.open_dimension_xy_aspect_ratio = ratio
         return self
 
-    def set_leftover_corner(self, corner: Corner | str) -> InstanceBuilder:
-        self._params.leftover_corner = corner if isinstance(corner, Corner) else Corner(corner)
+    def set_leftover_mode(self, mode: LeftoverMode | str) -> InstanceBuilder:
+        self._params.leftover_mode = mode if isinstance(mode, LeftoverMode) else LeftoverMode(mode)
         return self
 
     def add_bin(self, shape, *, cost: float = -1.0, copies: int = 1,
@@ -236,8 +236,8 @@ def _params_to_dict(p: Parameters) -> dict[str, Any]:
         out["item_item_minimum_spacing"] = p.item_item_minimum_spacing
     if p.open_dimension_xy_aspect_ratio > 0:
         out["open_dimension_xy_aspect_ratio"] = p.open_dimension_xy_aspect_ratio
-    if p.leftover_corner != Corner.BOTTOM_LEFT:
-        out["leftover_corner"] = p.leftover_corner.value
+    if p.leftover_mode != LeftoverMode.BOTTOM_LEFT:
+        out["leftover_mode"] = p.leftover_mode.value
     return out
 
 
@@ -245,8 +245,8 @@ def _params_from_dict(jp: dict) -> Parameters:
     return Parameters(
         item_item_minimum_spacing=jp.get("item_item_minimum_spacing", 0.0),
         open_dimension_xy_aspect_ratio=jp.get("open_dimension_xy_aspect_ratio", -1.0),
-        leftover_corner=Corner(jp["leftover_corner"]) if "leftover_corner" in jp
-        else Corner.BOTTOM_LEFT,
+        leftover_mode=LeftoverMode(jp["leftover_mode"]) if "leftover_mode" in jp
+        else LeftoverMode.BOTTOM_LEFT,
     )
 
 

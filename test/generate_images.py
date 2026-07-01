@@ -19,7 +19,7 @@ from shapely.geometry import Point, Polygon, MultiPolygon
 
 # ensure local pyckingsolver is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
-from pyckingsolver import InstanceBuilder, Objective, Solver, Corner, Instance
+from pyckingsolver import InstanceBuilder, Objective, Solver, LeftoverMode, Instance
 
 
 class _GallerySolver:
@@ -226,7 +226,7 @@ def ex06():
 # MARK: 7 — BIN_PACKING_WITH_LEFTOVERS
 def ex07():
     b = InstanceBuilder(Objective.BIN_PACKING_WITH_LEFTOVERS)
-    b.set_leftover_corner(Corner.BOTTOM_LEFT)
+    b.set_leftover_mode(LeftoverMode.BOTTOM_LEFT)
     b.add_bin_type_rectangle(300, 200, copies=5)
     b.add_item_type_rectangle(100, 80, copies=3)
     b.add_item_type_rectangle(60, 50, copies=5)

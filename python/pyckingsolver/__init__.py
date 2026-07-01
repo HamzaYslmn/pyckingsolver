@@ -18,22 +18,22 @@ from pyckingsolver.solver import Solver, SolverParams
 from pyckingsolver.types import (
     AllowedRotation,
     BinType,
-    Corner,
     Defect,
     FixedItem,
     ItemShape,
     ItemType,
+    LeftoverMode,
     Objective,
     Parameters,
     SolutionBin,
     SolutionItem,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "__version__",
-    "Objective", "Corner", "AllowedRotation",
+    "Objective", "LeftoverMode", "AllowedRotation",
     "Defect", "FixedItem", "BinType", "ItemShape", "ItemType",
     "Parameters", "SolutionItem", "SolutionBin",
     "Instance", "InstanceBuilder", "Solution",
