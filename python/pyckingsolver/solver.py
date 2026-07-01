@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,10 @@ from typing import Any
 from pyckingsolver.instance import Instance
 from pyckingsolver.solution import Solution
 from pyckingsolver.types import LeftoverMode, Objective
+
+class SolverCancelled(RuntimeError):
+    """Raised by `Solver.solve` when its `cancel` event is set mid-solve."""
+
 
 # MARK: SolverParams ─────────────────────────────────────────────────────────
 
@@ -110,6 +115,7 @@ class Solver:
               params: SolverParams | None = None,
               *,
               json_output: str | Path | None = None,
+              cancel: Any = None,
               **kwargs: Any) -> Solution:
         """Run the solver and return a parsed `Solution`.
 
@@ -117,6 +123,8 @@ class Solver:
             instance: An `Instance` or a path to a JSON file.
             params: A `SolverParams` instance (preferred for many options).
             json_output: Optional path to save the solution JSON.
+            cancel: Optional Event-like object (`.is_set()`). Once set, the
+                solver subprocess is killed and `SolverCancelled` is raised.
             **kwargs: Any `SolverParams` field can be passed as a kwarg.
         """
         sp = _merge_params(params, kwargs)
@@ -135,8 +143,8 @@ class Solver:
             metrics_path = tmp / "output.json"
             cmd = _build_cmd(self.binary, input_path, sol_path, metrics_path, sp)
 
-            result = subprocess.run(cmd, capture_output=True, text=True,
-                                    timeout=sp.time_limit + 30, cwd=tmp_str)
+            result = _run_solver(cmd, timeout=sp.time_limit + 30,
+                                 cwd=tmp_str, cancel=cancel)
             if result.returncode != 0:
                 self._save_crash(input_path, result.returncode)
                 raise RuntimeError(
@@ -256,6 +264,29 @@ _VALUE_FLAGS = {
 
 
 # MARK: helpers ──────────────────────────────────────────────────────────────
+
+
+def _run_solver(cmd: list[str], timeout: float, cwd: str, cancel: Any):
+    """subprocess.run + optional kill-on-cancel (0.25s poll)."""
+    if cancel is None:
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout, cwd=cwd)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, cwd=cwd)
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            out, err = proc.communicate(timeout=0.25)
+            return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+        except subprocess.TimeoutExpired:
+            if cancel.is_set():
+                proc.kill()
+                proc.communicate()
+                raise SolverCancelled("solve cancelled") from None
+            if time.monotonic() >= deadline:
+                proc.kill()
+                proc.communicate()
+                raise subprocess.TimeoutExpired(cmd, timeout) from None
 
 
 def _merge_params(params: SolverParams | None, kwargs: dict[str, Any]) -> SolverParams:

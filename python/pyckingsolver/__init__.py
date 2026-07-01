@@ -14,7 +14,7 @@ from pyckingsolver.geometry import (
 from pyckingsolver.instance import Instance, InstanceBuilder
 from pyckingsolver.nest import nest
 from pyckingsolver.solution import Solution
-from pyckingsolver.solver import Solver, SolverParams
+from pyckingsolver.solver import Solver, SolverCancelled, SolverParams
 from pyckingsolver.types import (
     AllowedRotation,
     BinType,
@@ -29,7 +29,7 @@ from pyckingsolver.types import (
     SolutionItem,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 __all__ = [
     "__version__",
@@ -37,7 +37,7 @@ __all__ = [
     "Defect", "FixedItem", "BinType", "ItemShape", "ItemType",
     "Parameters", "SolutionItem", "SolutionBin",
     "Instance", "InstanceBuilder", "Solution",
-    "Solver", "SolverParams",
+    "Solver", "SolverCancelled", "SolverParams",
     "nest",
     "shape_from_json", "shape_to_json", "elements_to_polygon",
     "circle_polygon", "rectangle_polygon",
