@@ -29,6 +29,13 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.6.1
+
+- **Native cancellation: `Solver.solve(..., cancel=event)`.**
+  Pass any Event-like object (`.is_set()`); once set, the solver subprocess
+  is killed (0.25s poll) and `SolverCancelled` is raised. No cancel = the old
+  `subprocess.run` path, byte-for-byte unchanged.
+
 ## What's New in 0.6.0
 
 - **Bundled solver rebuilt at upstream `8ea3129e6`.**
