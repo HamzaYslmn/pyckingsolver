@@ -29,6 +29,13 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.6.2
+
+- **Bundled solver rebuilt at upstream `750c7d7fd`.** Irregular tree search now
+  skips bins that can't fit any item instead of dead-ending the branch; skipped
+  bins appear in the solution as empty bins (kept for position/cost accounting),
+  so `Solution.bins` may contain bins with no items.
+
 ## What's New in 0.6.1
 
 - **Native cancellation: `Solver.solve(..., cancel=event)`.**
