@@ -24,6 +24,9 @@ class Solution:
     `metrics` is populated by `Solver.solve()` from the solver's `--output`
     JSON (e.g. `BinCost`, `FullWastePercentage`, `DensityX`). Empty when
     metrics are unavailable.
+
+    `bins` may contain empty bins (no items): the solver skips bins nothing
+    fits in but keeps them for position/cost accounting.
     """
 
     def __init__(self, bins: list[SolutionBin] | None = None,

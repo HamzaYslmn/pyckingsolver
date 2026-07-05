@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `8ea3129e6` — 2026-06-30).
-Python wrapper version: `0.6.1` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `750c7d7fd` — 2026-07-05).
+Python wrapper version: `0.6.2` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -19,6 +19,25 @@ When bumping the Python wrapper version, update all current-version tags:
 - Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
+
+---
+
+## MARK: Recent Upstream Changes (2026-06-30 → 2026-07-05)
+
+Pulled `8ea3129e6` → `750c7d7fd` (22 commits). Bundled binary rebuilt + re-bundled.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `4c40e57e0` | **irregular: skip bins that can't fit any item in the tree search** | **Behavioral — the reason to rebuild.** Previously a bin position where nothing fit dead-ended the branch (no insertions possible). Now the next bin position is tried; skipped bins are still added to the solution **as empty bins** to keep bin positions and cost accounting consistent. Wrapper parsing already tolerates `items: []`; note that `Solution.bins` may now contain empty bins and `total_bins_used()` counts them (matches C++ `BinCost`). |
+| `91f2dacf9` + 12 more | rectangleguillotine: new `sequential_strips_onedimensional` algorithm, new `maximum_number_1_cuts` / `maximum_distance_2_cuts` instance params, many `column_generation_strips` fixes | Other domain — not reachable from `packingsolver_irregular`. |
+| `bbe384e4c` | `Output` gains `open_dimension_x_bound` / `open_dimension_y_bound` (common.hpp) | Only set/serialized by rectangleguillotine; irregular `--output` metrics JSON unchanged. |
+| `416f2cea6` | Fix dash-underline width for X/Y column headers | Cosmetic stdout only (touches irregular `algorithm_formatter`); wrapper never parses stdout tables. |
+| `c67b89360` | extern: bump `columngenerationsolver` GIT_TAG | Build only — CG algorithm internals; no API change. |
+| `a519caaa5` / `43fda0773` / `e65bb1356` / `9a52f867e` / `4c40e57e0`-tests | Test restructuring into `tree_search` dirs | Test only. |
+
+**Wrapper impact**: zero CLI/JSON sync — no new irregular flags, input/output
+JSON unchanged. One semantic note: solutions may now contain empty bins (see
+above). Rebuild + re-bundle `packingsolver_irregular.exe` (done for this bump).
 
 ---
 
