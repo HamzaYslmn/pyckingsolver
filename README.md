@@ -29,6 +29,13 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.6.3
+
+- **Bundled solver rebuilt at upstream `59f50fed3`.** Fixes a
+  `NotAnytimeDeterministic` race across the parallel algorithms in `optimize()`,
+  so deterministic solves are now genuinely reproducible. No API or JSON change —
+  the remaining 14 upstream commits are all other-domain or tooling.
+
 ## What's New in 0.6.2
 
 - **Bundled solver rebuilt at upstream `750c7d7fd`.** Irregular tree search now
