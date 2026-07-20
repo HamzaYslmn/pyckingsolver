@@ -29,6 +29,25 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.6.5
+
+- **Adaptive stop: `stall_timeout` / `first_solution_timeout` on `SolverParams`.**
+  The Anytime solver writes every *improving* certificate, so these watch that file
+  and end the solve once it converges — `time_limit` becomes a ceiling instead of a
+  fixed cost. `stall_timeout` kills the run after N seconds without an improvement;
+  `first_solution_timeout` kills a wedged run that never produced one. Either flag
+  forces `only_write_at_the_end=False` (the streaming writes *are* the signal), and
+  the best certificate found so far is kept and returned. Unset = old behaviour.
+- **Bundled solver rebuilt at upstream `07682efd9`.** Tighter knapsack bound from the
+  Benders decomposition MILP relaxation, plus Feasibility support in column generation.
+- Runtime crash dumps (`pyckingsolver/_crashes`) can no longer end up inside a wheel.
+
+## What's New in 0.6.4
+
+- **Bundled solver rebuilt at upstream `bbfe94288`.** Fixes a crash on empty-item
+  instances and a circle-item crash; adds `SolutionBuilder` and a user feasibility
+  callback to the irregular module. No wrapper API change.
+
 ## What's New in 0.6.3
 
 - **Bundled solver rebuilt at upstream `59f50fed3`.** Fixes a

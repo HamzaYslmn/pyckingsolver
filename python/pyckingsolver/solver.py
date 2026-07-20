@@ -36,6 +36,11 @@ class SolverParams:
     """
     # I/O & misc
     time_limit: float = 60.0
+    # Anytime adaptive stop — in Anytime mode the binary writes every IMPROVING certificate;
+    # these watch that file and kill the solve when it converges, so `time_limit` becomes a
+    # ceiling instead of a fixed cost. Both require only_write_at_the_end=False.
+    stall_timeout: float | None = None           # kill after this many secs w/o an improving write
+    first_solution_timeout: float | None = None  # kill if NO solution appeared after this many secs
     verbosity_level: int = 0
     seed: int | None = None  # binary currently ignores --seed (marked "not used" upstream)
     memory_limit_megabytes: int | None = None  # None/0 = unlimited; caps RAM to fail clean instead of OOM-crashing
@@ -141,17 +146,23 @@ class Solver:
 
             sol_path = tmp / "solution.json"
             metrics_path = tmp / "output.json"
+            if sp.stall_timeout or sp.first_solution_timeout:
+                sp = replace(sp, only_write_at_the_end=False)  # streaming writes are the signal
             cmd = _build_cmd(self.binary, input_path, sol_path, metrics_path, sp)
 
-            result = _run_solver(cmd, timeout=sp.time_limit + 30,
-                                 cwd=tmp_str, cancel=cancel)
-            if result.returncode != 0:
+            result, stalled = _run_solver(cmd, timeout=sp.time_limit + 30,
+                                          cwd=tmp_str, cancel=cancel,
+                                          sol_path=sol_path, stall=sp.stall_timeout,
+                                          first=sp.first_solution_timeout)
+            if result.returncode != 0 and not stalled:
                 self._save_crash(input_path, result.returncode)
                 raise RuntimeError(
                     f"Solver failed (exit {result.returncode}):\n"
                     f"{result.stderr or result.stdout}")
             if not sol_path.exists():
                 raise FileNotFoundError(
+                    "Solver produced no solution within first_solution_timeout."
+                    if stalled else
                     f"Solver produced no output. stdout:\n{result.stdout}")
 
             sol = Solution.from_json(sol_path)
@@ -266,26 +277,47 @@ _VALUE_FLAGS = {
 # MARK: helpers ──────────────────────────────────────────────────────────────
 
 
-def _run_solver(cmd: list[str], timeout: float, cwd: str, cancel: Any):
-    """subprocess.run + optional kill-on-cancel (0.25s poll)."""
-    if cancel is None:
-        return subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=timeout, cwd=cwd)
+def _run_solver(cmd: list[str], timeout: float, cwd: str, cancel: Any,
+                sol_path: Path | None = None, stall: float | None = None,
+                first: float | None = None):
+    """One poll loop (0.25s): natural exit, cancel kill, adaptive stall kill, deadline kill.
+
+    Returns (CompletedProcess, stalled). `stalled=True` = killed on purpose because the
+    certificate stopped improving (`stall` secs since the last write) or never appeared
+    (`first` secs since start) — success for the caller if a certificate exists. The kill
+    happens well after the last write, so the file is never torn.
+    """
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, cwd=cwd)
     deadline = time.monotonic() + timeout
+    seen, last_change = None, time.monotonic()
+
+    def _kill():
+        proc.kill()
+        proc.communicate()
+
     while True:
         try:
             out, err = proc.communicate(timeout=0.25)
-            return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+            return subprocess.CompletedProcess(cmd, proc.returncode, out, err), False
         except subprocess.TimeoutExpired:
-            if cancel.is_set():
-                proc.kill()
-                proc.communicate()
+            now = time.monotonic()
+            if cancel is not None and cancel.is_set():
+                _kill()
                 raise SolverCancelled("solve cancelled") from None
-            if time.monotonic() >= deadline:
-                proc.kill()
-                proc.communicate()
+            if sol_path is not None:
+                try:
+                    m = sol_path.stat().st_mtime_ns
+                except OSError:
+                    m = None
+                if m is not None and m != seen:
+                    seen, last_change = m, now
+                limit = stall if seen else first
+                if limit is not None and now - last_change > limit:
+                    _kill()
+                    return subprocess.CompletedProcess(cmd, 0, "", ""), True
+            if now >= deadline:
+                _kill()
                 raise subprocess.TimeoutExpired(cmd, timeout) from None
 
 

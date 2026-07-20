@@ -1,6 +1,6 @@
 [project]
 name = "pyckingsolver"
-version = "0.6.4"
+version = "0.6.5"
 description = "Shapely-based Python interface for PackingSolver — 2D irregular bin packing & nesting"
 requires-python = ">=3.10"
 readme = {file = "../README.md", content-type = "text/markdown"}
@@ -49,6 +49,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["pyckingsolver"]
 artifacts = ["pyckingsolver/bin/*"]
+exclude = ["pyckingsolver/_crashes"]  # runtime crash dumps must never ship
 
 [dependency-groups]
 dev = [
