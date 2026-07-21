@@ -611,16 +611,14 @@ Unknown CLI flags can still be passed via `extra_args=["--my-flag", "value"]`
 ## Quick Nest
 
 For the common "pack this list of Shapely polygons" use case, `nest()` wraps
-the builder + solver into one call and adds three quality-of-life features:
+the builder + solver into one call and adds two quality-of-life features:
 
-1. **Spacing pre-buffer** — each item is inflated by `spacing/2` (Shapely buffer)
-   so the C++ solver only has to enforce no-overlap. This avoids a known
-   crash with `--item-item-minimum-spacing` on dense inputs. Set
-   `pre_buffer=False` to use the C++ flag instead.
-2. **Identical-shape grouping** — duplicate Shapely polygons are collapsed
+1. **Identical-shape grouping** — duplicate Shapely polygons are collapsed
    into one `ItemType` with a `copies` count (compared via WKB).
-3. **Origin anchoring** — every input is translated to its bottom-left
+2. **Origin anchoring** — every input is translated to its bottom-left
    corner before being added to the instance.
+
+`spacing` is forwarded to the solver's native `--item-item-minimum-spacing`.
 
 ```python
 from shapely.geometry import box, Polygon
@@ -633,7 +631,7 @@ sol = nest(
     shapes,
     bins=(1200, 600),                 # or a Polygon, or a list of either
     objective=Objective.BIN_PACKING,
-    spacing=2.0,                      # 2mm kerf, applied via pre-buffer
+    spacing=2.0,                      # 2mm kerf, enforced natively by the solver
     allowed_rotations=[(0, 0), (90, 90)],
     bin_copies=10,
     time_limit=30,

@@ -329,14 +329,12 @@ b.add_item_type(poly, copies=N)  # 1 item type → fast
 ```
 Group by `poly.wkb` to detect identical shapes.
 
-### Spacing Strategy (C++ inflate crash workaround)
-C++ `inflate()` crashes on complex shapes with holes + non-zero spacing.  
-**Fix**: Pre-apply spacing in Python via `poly.buffer(spacing).buffer(0)`, pass `spacing=0` to C++.  
-`inflate(shape, 0.0)` returns identity (offset.cpp line 187-188).
+### Spacing Strategy
+Use the native `item_item_minimum_spacing` flag. It holds a true 1x gap and leaves
+item geometry untouched, so holes keep their full area and no corner gets rounded.
 
 ### Hole-Aware Nesting
 For items with holes where smaller items should nest inside:
-- Use **half-buffer** (`spacing/2`) so holes shrink less, remain accessible
 - Keep holes via `min_hole_area=0` in prep
 - Try hole-aware first → fallback to hole-stripped
 
@@ -374,7 +372,7 @@ Gotchas:
 
 - **Default LP solver MUST be HiGHS, not CLP, for HiGHS-only builds.** The wrapper now defaults `SolverParams.linear_programming_solver = "Highs"`. The upstream C++ default in `optimize.hpp` is `SolverName::CLP`; when CLP isn't compiled in (e.g. all CI wheels, since CLP prebuilt is x86_64-only), running with the default (or `--linear-programming-solver CLP`) crashes with `STATUS_STACK_BUFFER_OVERRUN` (0xC0000409 / SIGABRT) on **any** instance with >1 placeable bin (any objective, any options). Reproduces with the simplest possible JSON: 1 rect item type + 1 rect bin type with `copies=2`. Fix: don't override the wrapper's `Highs` default unless your binary has CLP compiled in.
 - `group_identical_bins=True` was crashing — **FIXED** in solver.py. C++ expects `--group-identical-bins 1` (value required), not bare flag.
-- `inflate()` crashes on complex shapes with holes + non-zero spacing — always pre-buffer in Python.
+- ~~`inflate()` crashes on complex shapes with holes + non-zero spacing~~ — **FIXED UPSTREAM** in fontanf/shape `abea925` (PR #41, 2026-07-21): `approximate_by_line_segments` picked its arc-extras function from `outer` alone, but the choice also depends on the arc's orientation, so a Clockwise hole arc got the wrong wedge, never cancelled during the union, and survived as a CircularArc into output that then failed `is_polygon()`. Needs a binary built against `abea925` or later.
 - ~~`--anchor 0` still **enables** anchor~~ — **FIXED UPSTREAM** in commit `1528db6ea` (2026-04-28); C++ now reads `vm["anchor"].as<bool>()`. Wrapper still omits the flag when false (no-op now, still correct).
 - **Anchor post-processing (`linear_programming.cpp`) throws `std::logic_error("violated separation constraint")` on many real inputs → process exits 0xC00000FD.** Caused by FP precision: the LP solver returns positions where the post-verification `value` is just below the `-1e-6` tolerance (e.g. `-0.00001`). A previous local try/catch patch around `::linear_programming_anchor()` was **lost during the 2026-05-05 fast-forward pull to commit `a555eb2d3`** (it was never committed, just an in-tree edit). The current bundled binary `pyckingsolver/bin/packingsolver_irregular.exe` (rebuilt 2026-05-05) does **not** have the safety net. **Workaround**: keep `anchor=False` (wrapper default; `stock.py` already uses False). If you need anchor, re-apply the try/catch in `linear_programming_anchor()` (wrap the per-bin call in try { … } catch (std::exception&) { /* keep rigid-shifted solution */ }) and rebuild before flipping it on.
 
