@@ -29,6 +29,24 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.6.7
+
+- **Native `item_item_minimum_spacing` no longer crashes on items with holes.**
+  The C++ pin moves to packingsolver `1ad3c94e9`, whose shape dependency now points at
+  fontanf/shape `abea925` (PR #41). `approximate_by_line_segments` was picking its
+  arc-extras function from `outer` alone, but the choice also depends on the arc's
+  orientation: a Clockwise hole arc got the wrong wedge, its boundary never cancelled
+  during the union, and it survived as a CircularArc into output that then failed
+  `is_polygon()`. Measured on a 6-case nesting benchmark, the previous binary threw on
+  3 of them and silently fell back to a worse packing; one case improves from 35.2% to
+  59.8% material efficiency once the solve actually completes.
+- **`nest()` lost its `pre_buffer` argument.** It existed only to dodge the crash above
+  by inflating each item by `spacing/2`, which rounded corners, grew area and shrank
+  holes. `spacing` now always goes to the solver natively.
+  **Breaking:** passing `pre_buffer=` is now a `TypeError`.
+- Carries 8 upstream packingsolver fixes, including a crash on single-item/single-bin
+  instances whose rotation requires mirroring.
+
 ## What's New in 0.6.6
 
 - **`Solver.solve()` returns `None` instead of raising when no solution was found.**
