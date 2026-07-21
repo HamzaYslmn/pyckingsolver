@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `07682efd9` — 2026-07-20).
-Python wrapper version: `0.6.6` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `1ad3c94e9` — 2026-07-21).
+Python wrapper version: `0.6.7` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
