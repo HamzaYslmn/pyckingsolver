@@ -121,8 +121,10 @@ class Solver:
               *,
               json_output: str | Path | None = None,
               cancel: Any = None,
-              **kwargs: Any) -> Solution:
-        """Run the solver and return a parsed `Solution`.
+              **kwargs: Any) -> Solution | None:
+        """Run the solver and return a parsed `Solution`, or None when it found no
+        solution in time (too-tight bin, first_solution_timeout) — a normal outcome,
+        not an error. Genuine solver crashes still raise RuntimeError.
 
         Args:
             instance: An `Instance` or a path to a JSON file.
@@ -160,10 +162,7 @@ class Solver:
                     f"Solver failed (exit {result.returncode}):\n"
                     f"{result.stderr or result.stdout}")
             if not sol_path.exists():
-                raise FileNotFoundError(
-                    "Solver produced no solution within first_solution_timeout."
-                    if stalled else
-                    f"Solver produced no output. stdout:\n{result.stdout}")
+                return None  # nothing found in time (tight probe / hard instance) — callers fall back
 
             sol = Solution.from_json(sol_path)
             if metrics_path.exists():

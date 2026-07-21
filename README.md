@@ -29,6 +29,15 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.6.6
+
+- **`Solver.solve()` returns `None` instead of raising when no solution was found.**
+  A too-tight bin or a `first_solution_timeout` cutoff is a normal answer ("this does
+  not fit"), not a failure, and callers that probe with short budgets were drowning in
+  `FileNotFoundError` noise for expected outcomes. Genuine solver crashes (non-zero
+  exit) still raise `RuntimeError` and still save the instance to `_crashes/`.
+  **Breaking:** check the result for `None` before using it. `nest()` forwards it.
+
 ## What's New in 0.6.5
 
 - **Adaptive stop: `stall_timeout` / `first_solution_timeout` on `SolverParams`.**

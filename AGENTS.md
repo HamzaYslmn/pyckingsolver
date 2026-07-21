@@ -2,7 +2,7 @@
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
 C++ submodule pinned at `extern/packingsolver` (commit `07682efd9` — 2026-07-20).
-Python wrapper version: `0.6.5` (see `## v0.2.0 Breaking Changes` below).
+Python wrapper version: `0.6.6` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -182,6 +182,7 @@ Pulled `713d0dbea` → `da2af179b` (7 commits). Bundled binary rebuilt + re-bund
 - **`Solution.metrics`** is now populated from the solver's `--output` JSON (BinCost, FullWastePercentage, DensityX, etc.).
 - **`json_output=`** replaces the old `output_path=` kwarg on `Solver.solve()`.
 - **`cancel=`** (0.6.1) on `Solver.solve()`: Event-like (`.is_set()`); set → subprocess killed (0.25s poll), raises `SolverCancelled` (subclass of `RuntimeError`).
+- **`None` return** (0.6.6) from `Solver.solve()` / `nest()`: no certificate within the budget (too-tight bin, `first_solution_timeout`) is an answer, not an error. Only a non-zero exit raises `RuntimeError` + dumps to `_crashes/`.
 - **`stall_timeout` / `first_solution_timeout`** (0.6.5) on `SolverParams`: watch the streaming certificate file and kill the solve once it stops improving (or never started), making `time_limit` a ceiling rather than a fixed cost. Either one forces `only_write_at_the_end=False`; the best certificate is kept, so a stall-kill is a success, not an error.
 - **`_extra` forward-compat dicts re-added to all JSON-touching dataclasses** (`Parameters`, `BinType`, `Defect`, `FixedItem`, `ItemShape`, `ItemType`, `AllowedRotation`, `SolutionItem`, `SolutionBin`). Unknown keys from upstream JSON are stashed in `obj._extra` and re-emitted by `to_dict()`. This is the safety net so users can keep working when upstream adds fields before we update the wrapper.
 - New module layout adds `nest.py`. `solver.py` now contains both `Solver` and `SolverParams`.

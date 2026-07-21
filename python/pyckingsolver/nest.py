@@ -42,7 +42,7 @@ def nest(items: Sequence[Polygon],
          group_identical: bool = True,
          params: SolverParams | None = None,
          solver: Solver | None = None,
-         **solver_kwargs) -> Solution:
+         **solver_kwargs) -> Solution | None:
     """Nest `items` onto `bins`. See module docstring for details.
 
     Args:
