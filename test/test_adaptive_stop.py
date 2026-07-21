@@ -79,6 +79,21 @@ def test_natural_exit_is_not_stalled():
     print("   natural exit reported as a normal completion")
 
 
+def test_no_certificate_returns_none():
+    """Solve that never writes a certificate is None, not an exception (0.6.6)."""
+    import subprocess
+
+    import pyckingsolver.solver as solver_mod
+    original = solver_mod._run_solver
+    solver_mod._run_solver = lambda *a, **k: (
+        subprocess.CompletedProcess([], 0, "", ""), True)
+    try:
+        assert Solver().solve(_instance(4), params=SolverParams(time_limit=1)) is None
+    finally:
+        solver_mod._run_solver = original
+    print("   no certificate -> None (no exception)")
+
+
 # MARK: - Real solve
 
 
@@ -114,6 +129,7 @@ def main():
     test_first_solution_timeout_kills_wedged_solve()
     test_stall_timeout_kills_converged_solve_intact()
     test_natural_exit_is_not_stalled()
+    test_no_certificate_returns_none()
     test_real_solve_stops_early_without_losing_items()
     print("\nAll tests passed.")
 
