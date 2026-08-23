@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -121,6 +122,7 @@ class Solver:
               *,
               json_output: str | Path | None = None,
               cancel: Any = None,
+              on_improvement: Callable[[Solution], None] | None = None,
               **kwargs: Any) -> Solution | None:
         """Run the solver and return a parsed `Solution`, or None when it found no
         solution in time (too-tight bin, first_solution_timeout) — a normal outcome,
@@ -132,8 +134,15 @@ class Solver:
             json_output: Optional path to save the solution JSON.
             cancel: Optional Event-like object (`.is_set()`). Once set, the
                 solver subprocess is killed and `SolverCancelled` is raised.
+            on_improvement: Optional callback invoked with each improving
+                certificate seen mid-solve, then once with the returned
+                `Solution`. Forces `only_write_at_the_end=False`; improvements
+                closer together than the 0.25s poll are coalesced; a callback
+                exception kills the solve and propagates.
             **kwargs: Any `SolverParams` field can be passed as a kwarg.
         """
+        if on_improvement is not None and not callable(on_improvement):
+            raise TypeError("on_improvement must be callable or None")
         sp = _merge_params(params, kwargs)
 
         with tempfile.TemporaryDirectory(prefix="packingsolver_") as tmp_str:
@@ -148,14 +157,22 @@ class Solver:
 
             sol_path = tmp / "solution.json"
             metrics_path = tmp / "output.json"
-            if sp.stall_timeout or sp.first_solution_timeout:
+            if sp.stall_timeout or sp.first_solution_timeout or on_improvement is not None:
                 sp = replace(sp, only_write_at_the_end=False)  # streaming writes are the signal
             cmd = _build_cmd(self.binary, input_path, sol_path, metrics_path, sp)
 
+            def _notify_improvement(solution: Solution) -> None:
+                """Provisional delivery — fixed items marked, metrics not in yet."""
+                if bin_types:
+                    solution.mark_fixed_items(bin_types)
+                on_improvement(solution)
+
+            notify = _notify_improvement if on_improvement is not None else None
             result, stalled = _run_solver(cmd, timeout=sp.time_limit + 30,
                                           cwd=tmp_str, cancel=cancel,
                                           sol_path=sol_path, stall=sp.stall_timeout,
-                                          first=sp.first_solution_timeout)
+                                          first=sp.first_solution_timeout,
+                                          on_improvement=notify)
             if result.returncode != 0 and not stalled:
                 self._save_crash(input_path, result.returncode)
                 raise RuntimeError(
@@ -171,6 +188,8 @@ class Solver:
                 sol.mark_fixed_items(bin_types)
             if json_output:
                 sol.to_json(json_output)
+            if on_improvement is not None:
+                on_improvement(sol)
             return sol
 
     @staticmethod
@@ -278,18 +297,23 @@ _VALUE_FLAGS = {
 
 def _run_solver(cmd: list[str], timeout: float, cwd: str, cancel: Any,
                 sol_path: Path | None = None, stall: float | None = None,
-                first: float | None = None):
+                first: float | None = None,
+                on_improvement: Callable[[Solution], None] | None = None):
     """One poll loop (0.25s): natural exit, cancel kill, adaptive stall kill, deadline kill.
 
     Returns (CompletedProcess, stalled). `stalled=True` = killed on purpose because the
     certificate stopped improving (`stall` secs since the last write) or never appeared
     (`first` secs since start) — success for the caller if a certificate exists. The kill
     happens well after the last write, so the file is never torn.
+
+    `on_improvement` is fed the certificate as it improves; a snapshot caught mid-rewrite
+    is retried on the next poll. A parse or callback failure kills the child, then raises.
     """
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, cwd=cwd)
     deadline = time.monotonic() + timeout
     seen, last_change = None, time.monotonic()
+    delivered = None
 
     def _kill():
         proc.kill()
@@ -306,11 +330,20 @@ def _run_solver(cmd: list[str], timeout: float, cwd: str, cancel: Any,
                 raise SolverCancelled("solve cancelled") from None
             if sol_path is not None:
                 try:
-                    m = sol_path.stat().st_mtime_ns
+                    fingerprint = _file_fingerprint(sol_path.stat())
                 except OSError:
-                    m = None
-                if m is not None and m != seen:
-                    seen, last_change = m, now
+                    fingerprint = None
+                if fingerprint is not None and fingerprint != seen:
+                    seen, last_change = fingerprint, now
+                if on_improvement is not None and fingerprint not in (None, delivered):
+                    try:
+                        solution = _read_solution_if_stable(sol_path, fingerprint)
+                        if solution is not None:
+                            delivered = fingerprint
+                            on_improvement(solution)
+                    except BaseException:
+                        _kill()  # never leave the child running behind an error
+                        raise
                 limit = stall if seen else first
                 if limit is not None and now - last_change > limit:
                     _kill()
@@ -318,6 +351,29 @@ def _run_solver(cmd: list[str], timeout: float, cwd: str, cancel: Any,
             if now >= deadline:
                 _kill()
                 raise subprocess.TimeoutExpired(cmd, timeout) from None
+
+
+def _file_fingerprint(st: os.stat_result) -> tuple[int, int]:
+    """Identifies one certificate snapshot — a rewrite moves mtime, size, or both."""
+    return (st.st_mtime_ns, st.st_size)
+
+
+def _read_solution_if_stable(path: Path, fingerprint: tuple[int, int]) -> Solution | None:
+    """Parse the certificate, or None while it is mid-rewrite (the poll loop retries).
+
+    The binary truncates and rewrites in place, so a poll can catch a partial file: a torn
+    read fails in `json.loads`, and a read that raced a rewrite comes back with a changed
+    fingerprint. Anything else is a genuinely bad certificate and is left to the strict
+    `Solution.from_json` parse in `Solver.solve`.
+    """
+    try:
+        payload = path.read_bytes()
+        if _file_fingerprint(path.stat()) != fingerprint:
+            return None
+        data = json.loads(payload)
+    except (OSError, ValueError):
+        return None
+    return Solution.from_dict(data) if isinstance(data, dict) else None
 
 
 def _merge_params(params: SolverParams | None, kwargs: dict[str, Any]) -> SolverParams:

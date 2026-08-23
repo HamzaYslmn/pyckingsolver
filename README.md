@@ -554,6 +554,35 @@ for instance in batch:
 
 Keyword arguments to `solve()` always override fields of `params`.
 
+### Streaming Improvements
+
+Pass `on_improvement` to receive provisional layouts while the solver is still
+searching:
+
+```python
+def handle_solution(solution):
+    show_provisional_layout(solution)
+
+solution = solver.solve(
+    instance,
+    time_limit=120,
+    on_improvement=handle_solution,
+)
+```
+
+The Anytime solver rewrites its certificate on every improvement, so passing a
+callback forces `only_write_at_the_end=False` and the same 0.25s poll that drives
+the adaptive stop parses each new certificate into an ordinary `Solution`. A file
+caught mid-rewrite is retried on the next poll, and improvements closer together
+than the poll are coalesced — there is no callback per solver write.
+
+Callbacks run synchronously on the calling thread, so keep them quick and hand
+real work to a queue. Intermediate solutions are provisional: they carry no
+`metrics`, and anchoring and bin grouping only happen after optimization, so the
+layout can still change. `solve()` invokes the callback once more with exactly the
+`Solution` it returns. A callback exception kills the solve and propagates; no
+certificate means no callback and a `None` return.
+
 ### Algorithm Control
 
 Fine-tune the solver's strategy:
@@ -661,7 +690,7 @@ for it in sol.all_items():
 ```
 
 `nest()` accepts the same keyword arguments as `Solver.solve()` (e.g.
-`time_limit`, `params=SolverParams(...)`, `json_output`).
+`time_limit`, `params=SolverParams(...)`, `json_output`, `on_improvement`).
 
 Pass any CLI flag directly for new solver features:
 
