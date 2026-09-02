@@ -75,7 +75,9 @@ jobs:
 
     - name: Build wheel
       working-directory: python
-      run: uv build --wheel -o ../dist
+      run: |
+        cp ../README.md README.md
+        uv build --wheel -o ../dist
 
     - name: Tag wheel with platform
       shell: bash

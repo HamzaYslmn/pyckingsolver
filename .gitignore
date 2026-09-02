@@ -8,6 +8,7 @@ __pycache__
 python/.venv/
 python/packingsolver/bin/
 python/pyckingsolver/_crashes/
+python/README.md
 python/test/_tmp_*
 python/test/*.png
 bin/

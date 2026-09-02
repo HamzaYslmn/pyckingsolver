@@ -56,6 +56,7 @@ class SolverParams:
     # Algorithm selection
     optimization_mode: str | None = None  # Anytime / NotAnytime / NotAnytimeDeterministic / NotAnytimeSequential
     use_tree_search: bool | None = None
+    use_tree_search_periodic_packing: bool | None = None  # lattice patterns for item types with >16 copies; auto-selected upstream
     use_local_search: bool | None = None
     use_milp_raster: bool | None = None
     use_sequential_single_knapsack: bool | None = None
@@ -234,6 +235,7 @@ def _build_cmd(binary: Path, inp: Path, sol: Path, metrics: Path,
 
 _BOOL_VALUE_FLAGS = {
     "use_tree_search": "--use-tree-search",
+    "use_tree_search_periodic_packing": "--use-tree-search-periodic-packing",
     "use_local_search": "--use-local-search",
     "use_milp_raster": "--use-milp-raster",
     "use_sequential_single_knapsack": "--use-sequential-single-knapsack",
