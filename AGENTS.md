@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `1ad3c94e9` — 2026-07-21).
-Python wrapper version: `0.6.7` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `5c8dcbcde`, 2026-09-01).
+Python wrapper version: `0.7.0` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -19,6 +19,25 @@ When bumping the Python wrapper version, update all current-version tags:
 - Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
+
+---
+
+## MARK: Recent Upstream Changes (2026-07-21 → 2026-09-01)
+
+Pulled `1ad3c94e9` → `5c8dcbcde`. Bundled Windows binary taken from upstream's own `latest`
+release build of that commit (the CI workflow rebuilds it for the wheel). Upstream moves the
+`latest` tag on every build, so refresh the submodule with `git fetch --force --tags origin`
+before pulling; a plain `git pull --tags` refuses to clobber the stale local tag.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `e30420a7` / `a68dd2ff` | **irregular: add `tree_search_periodic_packing`; enforce item-item/item-bin spacing in it** | **Behavioral, the reason for 0.7.0.** Item types with more than 16 copies are tiled as a lattice. Auto-selected for single-bin objectives; new CLI flag `--use-tree-search-periodic-packing` exposed as `SolverParams.use_tree_search_periodic_packing`. |
+| `0cae9d04` | tree search and sequential value correction consider bin types by increasing space for Knapsack | Behavioral, better bin choice. |
+| `4803f637` | Detect proven infeasibility for BinPacking/VSBP/Knapsack | Solver exits early instead of running out the clock. |
+| `25a025a4` | rectangle, irregular: respect defects in tree-search maximal-spaces algorithms | Correctness with defects. |
+| `aa0aba9c` / `f9db3361` | `ItemType::copies_min` across problem types, wired into column generation and MILP | New instance field; wrapper does not expose it yet. |
+| `615bd31a` | Fix HiGHS callback interrupt request | Stability. |
+| `86fc058f` / `d2a94803` | shape dependency bump, basic-shapes decomposition moved into shape | Build only. |
 
 ---
 

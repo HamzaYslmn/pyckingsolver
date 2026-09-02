@@ -29,6 +29,21 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.7.0
+
+- **C++ pin moves to packingsolver `5c8dcbcde` (master, 2026-09-01).** The headline change is
+  upstream's new `tree_search_periodic_packing` algorithm (2026-07-30, item spacing honoured since
+  07-31): any item type with more than 16 copies is tiled as a repeating lattice instead of being
+  placed copy by copy. It is auto-selected; `SolverParams.use_tree_search_periodic_packing`
+  exposes the CLI flag for when you want to force or disable it.
+- Measured on a laser-nesting benchmark (2000x1000 sheet, 3 mm spacing, KNAPSACK): a 465-part
+  pool of five small parts placed fully in 1.9 s where 0.6.7 needed 87 s; a 1000-part pool reached
+  67.7% fill in 7.5 s where 0.6.7 placed 158 parts in 45 s; a single part at 3000 copies packed to
+  78.5% in 4.6 s.
+- Also picked up from upstream since `1ad3c94e9`: knapsack tree search tries bin types by
+  increasing space, proven-infeasibility detection for bin packing objectives, defects respected in
+  the maximal-spaces tree search, `copies_min` on item types, and a HiGHS callback fix.
+
 ## What's New in 0.6.7
 
 - **Native `item_item_minimum_spacing` no longer crashes on items with holes.**
