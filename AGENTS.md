@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `5c8dcbcde`, 2026-09-01).
-Python wrapper version: `0.7.0` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `9917fcb0f`, 2026-09-02).
+Python wrapper version: `0.8.0` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -19,6 +19,89 @@ When bumping the Python wrapper version, update all current-version tags:
 - Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
+
+---
+
+## MARK: Wrapper Gaps vs Upstream
+
+Reviewed against `9917fcb0f`. `packingsolver_irregular` is the only binary the wheel ships,
+so this compares the wrapper to that binary's CLI, its instance JSON reader
+(`src/irregular/instance_builder.cpp::read`) and its solution/output JSON.
+
+**Closed in 0.8.0**
+
+- `item_types[].copies_min` — read by upstream since `aa0aba9c`, now `add_item(copies_min=)`.
+  Measured: a 100x100 bin, one 90x90 item at profit 1 and 25 20x20 items at profit 50, KNAPSACK.
+  Without it the solver packs 25 smalls for profit 1250 and skips the big item; with
+  `copies_min=1` on the big item it packs that one instead.
+- `--not-anytime-tree-search-periodic-packing-queue-size` — the last irregular CLI option with
+  no `SolverParams` field. The flag lists now match `main.cpp` exactly.
+- `_read_metrics` read `raw["Solution"]`, a key the file does not have, so `Solution.metrics`
+  was the whole `--output` document. It is now `Output.Solution` merged with the run-level
+  `Output` keys, minus `IntermediaryOutputs`.
+
+**Open, upstream cannot express it from JSON**
+
+- **Resources** (`BinType::resources`, capacity/consumption/penalty, enforced at tree-search
+  level since `72f75d54`). `box`, `onedimensional`, `rectangle` and `rectangleguillotine` all
+  parse a `"resources"` array in their bin types; `irregular`'s reader does not. Only the C++
+  `InstanceBuilder::add_bin_type_resource` API can set them, which a subprocess wrapper cannot
+  reach. Needs an upstream issue, not a wrapper change.
+- **Quality rules** (`Parameters::quality_rules`, `ItemShape::quality_rule`, `Defect::type`).
+  `build()` validates them but `read()` never populates them, so a defect type can be written
+  and nothing consumes it. Same story: upstream first. This is why v0.4.0 dropped the wrapper's
+  quality-rule surface as inert; it still is.
+- `Parameters::scale_value` — likewise C++-only.
+
+**Live upstream crashes, re-checked on `9917fcb0f`**
+
+- `OPEN_DIMENSION_XY` still dies with `0xC0000005` (access violation) on a plain
+  rectangles-in-a-huge-bin instance; `test/generate_images.py::ex05` is the reproducer and is the
+  one gallery image that does not render. Unchanged since it was first seen.
+- Native `type:"circle"` throws in `compute_shape_supports` (exit 1), which is why
+  `geometry.py` discretizes circles instead of passing them through.
+- **A pinned item's holes are not free space.** Measured on `9917fcb0`: a 150x100 bin holding
+  one 4-hole plate and 8 R=8 discs places 4 discs, all four inside holes, when the plate is a
+  normal item; pin the same plate with `add_fixed_item` and the solve places **zero** discs.
+  Widen the bin to 300x100 and the pinned run places all 8 discs but none in a hole. Holds with
+  spacing 0 and with 8 mm of radial clearance, so it is not a spacing margin. Anything relying on
+  `add_fixed_item` to expose a parent's holes for backfilling needs to verify it still does.
+
+**Open, would be a wrapper change**
+
+- **Native circular arcs on input.** `type:"general"` with `CircularArc` elements is accepted
+  and round-trips: an 8-copy half-disc knapsack solves and the certificate echoes
+  `CircularArc` elements back. The wrapper already *parses* arcs (`elements_to_polygon`) but
+  only *emits* `type:"polygon"`, so every arc goes in as a 64-segment approximation. Emitting
+  arcs would need a non-Shapely carrier for the input geometry (Shapely has no arc primitive),
+  i.e. a new API surface, so it is a deliberate deferral, not an oversight.
+  Native `type:"circle"` is still unusable: it throws in `compute_shape_supports` (exit 1),
+  which is what `geometry.py` documents.
+- **Other problem types.** `rectangle`, `rectangleguillotine`, `box`, `boxstacks`,
+  `onedimensional` each have their own binary, instance JSON and solution JSON. None are
+  shipped or wrapped. `Objective.BIN_PACKING_CUTTING_COST` belongs to `rectangleguillotine`;
+  irregular accepts the string and exits 0 with `bins: null`, so it is deliberately absent
+  from the wrapper's `Objective`.
+- Upstream's `--log2stderr` is dead: `main.cpp` declares `log2stderr` but `read_args` checks
+  `vm.count("log-to-stderr")`. `SolverParams.log_to_stderr` therefore does nothing. Worth an
+  upstream one-liner.
+
+---
+
+## MARK: Recent Upstream Changes (2026-09-01 → 2026-09-02)
+
+Pulled `5c8dcbcde` → `9917fcb0f` (2 commits). Bundled binary rebuilt + re-bundled. Upstream's
+rolling `latest` release tag still points at `5c8dcbcde`, so there is no prebuilt binary for
+this pin yet; the wheel CI builds from the submodule regardless.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `bb5eb118` | **column_generation: subset-row cuts charged their resource per item copy instead of per item type** | Correctness, reachable from irregular. `src/algorithms/column_generation.hpp` is the shared template `optimize_column_generation` instantiates. The pricing resource set only copy 0 to 1.0 and `Resource::item_consumption` repeats the last entry, so every further copy charged 1.0 too, making the resource count copies packed rather than distinct types present, unlike the `coefficient()` used to charge the cut in the master. A trailing 0.0 caps it at 1.0 per type. Visible only when column generation runs (auto-selected for BinPacking/VSBP with several bin types) on pools with multi-copy item types. |
+| `9917fcb0` | onedimensional: restore the objective allow-list around `use_milp_assignment` | Build only for irregular. `optimize_onedimensional_bound` does call `onedimensional::optimize` and forwards the irregular objective, but never sets `use_milp_assignment`, so the `std::invalid_argument` was unreachable — verified by running a `bin-packing-with-leftovers` instance on the pre-fix binary (exit 0, solution written). |
+
+**Wrapper impact**: no CLI, instance-JSON or solution-JSON change. The 0.8.0 wrapper edits
+close pre-existing gaps (see `## MARK: Wrapper Gaps vs Upstream` above), they do not track
+this pull.
 
 ---
 

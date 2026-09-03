@@ -29,6 +29,43 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.8.0
+
+- **`ARC_RESOLUTION` now means vertices per full circle, and a circle costs 64 of them, not 256.**
+  `circle_polygon` used `Point.buffer(resolution=...)`, whose `resolution` counts segments per
+  *quadrant*, while `_sample_arc` on the parse side read the same constant as segments per full
+  circle. One name, two meanings, 4x apart. Vertex count is what the solver's runtime scales with:
+  fourteen distinct-radius circle types x4 copies on a 2000x1000 sheet at 3 mm spacing, KNAPSACK,
+  56 items placed either way, went **12.23 s -> 7.89 s (1.55x)**. Accuracy lost is 0.010% -> 0.161%
+  of area, a 0.06 mm sagitta at r=50 — an order of magnitude under any kerf. Packings change, so
+  pin `==0.7.0` if you need the old layouts verbatim.
+
+- **C++ pin moves to packingsolver `9917fcb0f` (master, 2026-09-02).** Two upstream fixes.
+  A subset-row cut in the shared column-generation template charged its resource once per item
+  *copy* instead of once per item *type*, overcharging the cut on pools with multi-copy types;
+  column generation is auto-selected for bin packing with several bin types, so irregular
+  reaches it. The other fix is a `onedimensional` MILP guard that irregular links but never
+  triggers.
+- **`copies_min` on item types.** `add_item(..., copies_min=2)` forces at least that many copies
+  to be packed. It only bites under `KNAPSACK`, where packing an item type is otherwise optional:
+  a 100x100 bin offered one 90x90 item at profit 1 and twenty-five 20x20 items at profit 50 packs
+  the smalls and drops the big one; `copies_min=1` on the big item packs it instead.
+- **`SolverParams.not_anytime_tree_search_periodic_packing_queue_size`** — the last
+  `packingsolver_irregular` CLI option without a wrapper field. Every flag the binary accepts is
+  now reachable from `SolverParams`.
+- **`on_improvement=` streams provisional layouts.** `solve()` calls it with each improving
+  certificate the poll loop catches, then once with the solution it returns. Adapted from
+  [@Cabalist](https://github.com/Cabalist)'s PR #4.
+- **`json_output=` now saves the solver's certificate verbatim** instead of re-serializing the
+  parsed solution. The old path wrote only id/x/y/angle/mirror, so reading the file back gave a
+  `Solution` with zero geometry. `Solution.to_json()` still writes that sparse form on demand —
+  it is upstream's own editable solution format, see *Debugging against the C++ solver*.
+- **`Solution.metrics` finally holds the metrics.** It used to hand back the entire `--output`
+  document (`Parameters`, `IntermediaryOutputs`, `Output`), so the documented `metrics["BinCost"]`
+  raised `KeyError`. It is now `Output.Solution` (`BinCost`, `FullWastePercentage`, `DensityX`,
+  `ItemProfit`, `NumberOfBins`, ...) merged with the run-level `Time`, `IsProvenInfeasible` and
+  the per-objective bounds. `IntermediaryOutputs`, one entry per improving solution, is dropped.
+
 ## What's New in 0.7.0
 
 - **C++ pin moves to packingsolver `5c8dcbcde` (master, 2026-09-01).** The headline change is
@@ -208,6 +245,32 @@ for item in solution.all_items():
 
 ---
 
+## Debugging against the C++ solver
+
+Everything the wrapper exchanges with `packingsolver_irregular` is JSON, so any solve can be
+reproduced against the upstream binary by hand.
+
+```python
+inst = builder.build()
+inst.to_json("instance.json")             # byte-identical to what solve() sends
+
+sol = Solver().solve(inst, json_output="certificate.json")   # the solver's own output, verbatim
+sol.to_json("sparse.json")                # upstream's editable solution format
+```
+
+```bash
+packingsolver_irregular --input instance.json --certificate out.json --output metrics.json
+```
+
+The two solution files are different on purpose:
+
+| file | contents | who reads it |
+|---|---|---|
+| `json_output=` certificate | full geometry, every placed shape | `Solution.from_json`, your own inspection |
+| `Solution.to_json()` | `bins[].id/copies` + `items[].id/x/y/angle/mirror` | upstream `SolutionBuilder::read`, and the `fill_solution_file` tool that rebuilds geometry from it |
+
+`Solution.metrics` comes from the `--output` file, not the certificate.
+
 ## Objectives
 
 Choose what the solver optimizes:
@@ -252,7 +315,7 @@ b = InstanceBuilder(Objective.BIN_PACKING)
 # Rectangle bin
 b.add_bin_type_rectangle(1200, 600, copies=10, cost=1.0)
 
-# Circle bin (exact native circle — no polygon approximation)
+# Circle bin (discretized to a polygon — see Shape Format below)
 b.add_bin_type_circle(radius=300)
 
 # Any Shapely polygon
@@ -284,6 +347,9 @@ b.add_item_type(polygon, copies=3, profit=42.0)
 
 # Multiple shapes per item (composite/multi-part item)
 b.add_item_type([shape_a, shape_b], copies=2)
+
+# Force at least N copies to be packed (KNAPSACK only — elsewhere every copy is mandatory)
+b.add_item_type(polygon, copies=5, copies_min=2)
 ```
 
 ### Rotations
@@ -541,7 +607,7 @@ solution = solver.solve(
     instance,
     time_limit=60,              # seconds
     verbosity_level=1,          # 0=quiet, 1=summary, 2=verbose
-    json_output="sol.json",     # optional: persist solution JSON
+    json_output="sol.json",     # optional: save the solver certificate as-is
 )
 ```
 

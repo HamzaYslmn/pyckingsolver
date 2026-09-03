@@ -138,12 +138,16 @@ class InstanceBuilder:
         return len(self._bins[bin_type_id].fixed_items) - 1
 
     def add_item(self, shape, *, profit: float = -1.0, copies: int = 1,
+                 copies_min: int = -1,
                  allowed_rotations: list | None = None,
                  allow_mirroring: bool = False) -> int:
         """Add an item type.
 
         - `shape` may be a Polygon, list of Polygons / ItemShapes (multi-shape
           item), an `(w, h)` tuple, or a numeric radius.
+        - `copies_min` forces at least that many copies to be packed. Only
+          meaningful for KNAPSACK, where packing an item type is otherwise
+          optional; leave at -1 for the solver default.
         - `allowed_rotations` accepts:
             * None / []           -> single fixed angle 0, no mirror
             * list[float]         -> discrete angles
@@ -161,7 +165,8 @@ class InstanceBuilder:
 
         rots = _normalize_rotations(allowed_rotations, allow_mirroring)
         self._items.append(ItemType(shapes=shapes, profit=profit,
-                                    copies=copies, allowed_rotations=rots))
+                                    copies=copies, copies_min=copies_min,
+                                    allowed_rotations=rots))
         return len(self._items) - 1
 
     def add_item_type(self, shape, **kw) -> int:
@@ -330,6 +335,8 @@ def _item_to_dict(it: ItemType) -> dict[str, Any]:
         out["profit"] = it.profit
     if it.copies != 1:
         out["copies"] = it.copies
+    if it.copies_min >= 0:
+        out["copies_min"] = it.copies_min
     if it.allowed_rotations != [AllowedRotation()]:
         out["allowed_rotations"] = [_rot_to_dict(r) for r in it.allowed_rotations]
     return out
@@ -346,7 +353,9 @@ def _item_from_dict(ji: dict) -> ItemType:
         rots = rots + [AllowedRotation(r.start_angle, r.end_angle, True)
                        for r in rots if not r.mirror]
     return ItemType(shapes=shapes, profit=ji.get("profit", -1.0),
-                    copies=ji.get("copies", 1), allowed_rotations=rots)
+                    copies=ji.get("copies", 1),
+                    copies_min=ji.get("copies_min", -1),
+                    allowed_rotations=rots)
 
 
 def _rot_to_dict(r: AllowedRotation) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 """Generate PNG visualizations for all 12 test examples.
 
-Usage:  cd pyckingsolver && uv run --directory python python test/generate_images.py
+Usage:  cd pyckingsolver && uv run --directory python --extra viz python ../test/generate_images.py
 """
 
 from __future__ import annotations
@@ -127,7 +127,7 @@ def _render(name: str, sol, instance_bins=None, defects=None, title=""):
     path = os.path.join(IMG_DIR, f"{name}.png")
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
-    print(f"  ✓ {path}")
+    print(f"  ok   {path}")
 
 
 # MARK: 1 — BIN_PACKING
@@ -194,15 +194,14 @@ def ex05():
     b.add_bin_type_rectangle(99999, 99999)
     b.add_item_type_rectangle(30, 20, copies=6)
     b.add_item_type_rectangle(40, 25, copies=4)
-    try:
-        sol = _solver.solve(b.build(), time_limit=10)
-        max_x = max((s.bounds[2] for item in sol.all_items() for s in item.shapes), default=200)
-        max_y = max((s.bounds[3] for item in sol.all_items() for s in item.shapes), default=200)
-        bins_geom = [Polygon([(0, 0), (max_x + 10, 0), (max_x + 10, max_y + 10), (0, max_y + 10)])]
-        _render("ex05_open_xy", sol, bins_geom,
-                title="5. OPEN_DIMENSION_XY — compact rectangle")
-    except RuntimeError:
-        print("  ⚠ ex05_open_xy: SKIPPED (C++ solver crash)")
+    # No local try/except: main() already reports a failing example. OPEN_DIMENSION_XY
+    # has historically crashed the C++ solver, so this one may legitimately not render.
+    sol = _solver.solve(b.build(), time_limit=10)
+    max_x = max((s.bounds[2] for item in sol.all_items() for s in item.shapes), default=200)
+    max_y = max((s.bounds[3] for item in sol.all_items() for s in item.shapes), default=200)
+    bins_geom = [Polygon([(0, 0), (max_x + 10, 0), (max_x + 10, max_y + 10), (0, max_y + 10)])]
+    _render("ex05_open_xy", sol, bins_geom,
+            title="5. OPEN_DIMENSION_XY — compact rectangle")
 
 
 # MARK: 6 — VARIABLE_SIZED_BIN_PACKING
@@ -327,7 +326,7 @@ def main():
         try:
             fn()
         except Exception as e:
-            print(f"  ✗ {fn.__name__}: {e}")
+            print(f"  FAIL {fn.__name__}: {e}")
     print("Done.")
 
 

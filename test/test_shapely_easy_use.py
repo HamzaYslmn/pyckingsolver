@@ -1,6 +1,6 @@
 """MARK: examples — All pyckingsolver use cases, one file.
 
-Usage:  cd pyckingsolver && uv run --directory python python test/test_shapely_easy_use.py
+Usage:  cd pyckingsolver && uv run --directory python python ../test/test_shapely_easy_use.py
 
 Each function is self-contained.  Output goes to stdout.
 """

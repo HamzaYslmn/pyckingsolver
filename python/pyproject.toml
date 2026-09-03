@@ -1,6 +1,6 @@
 [project]
 name = "pyckingsolver"
-version = "0.7.0"
+version = "0.8.0"
 description = "Shapely-based Python interface for PackingSolver — 2D irregular bin packing & nesting"
 requires-python = ">=3.10"
 readme = {file = "README.md", content-type = "text/markdown"}  # copied in from ../README.md before build; hatchling refuses paths outside the project
@@ -40,7 +40,7 @@ Issues = "https://github.com/HamzaYslmn/pyckingsolver/issues"
 "Upstream C++ Solver" = "https://github.com/fontanf/packingsolver"
 
 [project.optional-dependencies]
-viz = ["matplotlib>=3.8", "plotly>=5.0"]
+viz = ["matplotlib>=3.8"]
 
 [build-system]
 requires = ["hatchling"]

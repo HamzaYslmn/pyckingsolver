@@ -12,8 +12,9 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from shapely.geometry import MultiPolygon, Point, Polygon
+from shapely.geometry import MultiPolygon, Polygon
 
+# Vertices per full circle, both when discretizing one and when sampling an arc.
 ARC_RESOLUTION = 64
 
 
@@ -142,10 +143,19 @@ def _signed_area(pts: list[tuple[float, float]]) -> float:
 
 def circle_polygon(radius: float, center: tuple[float, float] = (0.0, 0.0),
                    resolution: int = ARC_RESOLUTION) -> Polygon:
-    """Approximate a circle as a regular polygon (the form the solver accepts)."""
+    """Approximate a circle as an inscribed regular `resolution`-gon.
+
+    Not `Point.buffer()`: its `resolution` counts segments per *quadrant*, so the
+    same number would mean four times as many vertices here as in `_sample_arc`,
+    and vertex count is what the solver's runtime scales with.
+    """
     if not radius or radius <= 0:
         return Polygon()
-    return Point(*center).buffer(float(radius), resolution=resolution)
+    cx, cy = center
+    n = max(3, int(resolution))
+    step = 2 * math.pi / n
+    return Polygon([(cx + radius * math.cos(i * step), cy + radius * math.sin(i * step))
+                    for i in range(n)])
 
 
 def rectangle_polygon(width: float, height: float) -> Polygon:

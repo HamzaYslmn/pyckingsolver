@@ -143,6 +143,7 @@ class ItemType:
     shapes: list[ItemShape] = field(default_factory=list)
     profit: float = -1.0
     copies: int = 1
+    copies_min: int = -1  # -1: solver default (0 for KNAPSACK, `copies` otherwise)
     allowed_rotations: list[AllowedRotation] = field(
         default_factory=lambda: [AllowedRotation()])
 
