@@ -1,29 +1,32 @@
 """MARK: test_nesting — PackingSolver nesting tests with PNG output.
 
-Usage:  cd python && uv run python test/test_nesting.py
+Usage:  cd pyckingsolver && uv run --directory python python ../test/test_nesting.py
 """
 
+import json
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pymupdf
 from shapely.geometry import Polygon, Point
 
-from pyckingsolver import Instance, InstanceBuilder, Objective, Solution
+from pyckingsolver import Instance, InstanceBuilder, Objective, Solution, Solver
+from pyckingsolver.geometry import ARC_RESOLUTION, circle_polygon
 
 # MARK: - Paths
 
 _REPO = Path(__file__).resolve().parents[1]            # pyckingsolver/
 _SOLVER_DIR = _REPO / "extern" / "packingsolver"      # C++ submodule
 _DATA = _SOLVER_DIR / "data" / "irregular"
-_OUT = Path(__file__).resolve().parent
+_OUT = Path(__file__).resolve().parent            # scratch for the temp instance/solution
+_IMG = _REPO / "img"                              # the README gallery, the only home for PNGs
 
 
 # MARK: - Helpers
 
 def _find_solver() -> str:
     """Find the solver binary — bundled (pip install) or local build."""
-    from pyckingsolver import Solver
     return str(Solver().binary)
 
 
@@ -101,7 +104,7 @@ def test_hole_fill():
     inst = Instance.from_json(_DATA / "tests" / "polygon_with_hole.json")
     sol = _solve(inst)
     print(f"   {sol.total_item_count()} items in {sol.total_bins_used()} bin")
-    _render_png(sol, inst, ["#00cc88", "#ff6644"], _OUT / "test1_hole_fill.png")
+    _render_png(sol, inst, ["#00cc88", "#ff6644"], _IMG / "test1_hole_fill.png")
 
 
 # MARK: - Test 2: Frames + rings with fillers inside holes
@@ -127,18 +130,24 @@ def test_holes_with_fillers():
     sol = _solve(inst)
     print(f"   {sol.total_item_count()} items in {sol.total_bins_used()} bin")
     _render_png(sol, inst, ["#00cc88", "#ff6644", "#4488ff", "#ffcc00", "#ff44aa", "#44ffcc"],
-                _OUT / "test2_custom_holes.png")
+                _IMG / "test2_custom_holes.png")
 
 
 # MARK: - Test 3: Metal cutting (plates, brackets, washers, gussets)
 
 def test_metal_cutting():
     """Laser cutting: plates with bolt holes, U-brackets, washers, discs, gussets.
-    Uses OPEN_DIMENSION_X so solver packs tightly — discs should fill holes."""
+
+    OPEN_DIMENSION_X minimises the used X extent, nothing else. A part already behind the
+    frontier costs the objective nothing wherever it sits, so hole filling here is
+    opportunistic (4 of the 8 discs land in a hole) rather than something the objective buys;
+    filling every hole needs the hole to be the only space left, as in test 2. The packing is
+    identical at bin widths 360, 400 and 1200, so the bin is sized to the result.
+    """
     print("\n[3] Metal cutting with holes")
     b = InstanceBuilder(Objective.OPEN_DIMENSION_X)
     b.set_item_item_minimum_spacing(2.0)
-    b.add_bin_type_rectangle(1200, 300)
+    b.add_bin_type_rectangle(400, 300)
     rots_4 = [(0, 0), (90, 90), (180, 180), (270, 270)]
 
     # Mounting plate 150x100 with 4 bolt holes R=12
@@ -165,7 +174,62 @@ def test_metal_cutting():
     sol = _solve(inst)
     print(f"   {sol.total_item_count()} items in {sol.total_bins_used()} bin")
     _render_png(sol, inst, ["#22dd88", "#ff5533", "#3399ff", "#ffdd33", "#ff55cc"],
-                _OUT / "test3_metal_cutting.png")
+                _IMG / "test3_metal_cutting.png")
+
+
+# MARK: - Test 4: wrapper invariants that a solver upgrade can silently break
+
+
+def test_wrapper_invariants():
+    """copies_min reaches the solver, circles stay 64-gons, both JSON forms hold."""
+    print("\n[4] Wrapper invariants")
+
+    def _instance(copies_min):
+        b = InstanceBuilder(Objective.KNAPSACK)
+        b.add_bin_type_rectangle(100, 100)
+        b.add_item_type_rectangle(90, 90, copies=1, profit=1, copies_min=copies_min)
+        b.add_item_type_rectangle(20, 20, copies=25, profit=50)
+        return b.build()
+
+    solver = Solver()
+
+    def _big_placed(copies_min):
+        """Copies of the big low-profit item that KNAPSACK actually packed."""
+        sol = solver.solve(_instance(copies_min), time_limit=5)
+        assert sol is not None, f"no solution for copies_min={copies_min}"
+        return sol, sum(1 for it in sol.all_items() if it.item_type_id == 0)
+
+    free_sol, free_big = _big_placed(-1)
+    assert free_big == 0, f"knapsack kept the low-profit item unasked ({free_big})"
+    _, forced_big = _big_placed(1)
+    assert forced_big == 1, f"copies_min=1 did not force the item in ({forced_big})"
+
+    # ARC_RESOLUTION counts vertices per full circle on both sides of the wire.
+    n = len(circle_polygon(50).exterior.coords) - 1
+    assert n == ARC_RESOLUTION, f"circle_polygon emits {n} vertices, not {ARC_RESOLUTION}"
+
+    # metrics is the flattened Output, not the raw --output document.
+    m = free_sol.metrics
+    assert "IntermediaryOutputs" not in m, "metrics still carries the per-improvement log"
+    for key in ("BinCost", "ItemProfit", "FullWastePercentage", "Time", "IsProvenInfeasible"):
+        assert key in m, f"metrics missing {key!r}: {sorted(m)}"
+
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "sol.json"
+        solver.solve(_instance(-1), time_limit=5, json_output=str(out))
+        # json_output is the certificate: it must read back with geometry intact.
+        reread = Solution.from_json(out)
+        placed = reread.all_items()
+        assert placed and placed[0].shapes, "json_output round trip lost the item geometry"
+
+    # to_json() stays the sparse form upstream's SolutionBuilder::read accepts.
+    bin0 = json.loads(reread.to_json())["bins"][0]
+    assert {"id", "copies"} <= bin0.keys(), f"bin keys: {sorted(bin0)}"
+    assert {"id", "x", "y", "angle", "mirror"} <= bin0["items"][0].keys(), (
+        f"item keys: {sorted(bin0['items'][0])}")
+
+    print(f"   copies_min: {free_big} -> {forced_big} big item, {n}-gon circles, "
+          f"{len(m)} metric keys, both JSON forms intact")
 
 
 # MARK: - Main
@@ -177,6 +241,7 @@ def main():
     test_hole_fill()
     test_holes_with_fillers()
     test_metal_cutting()
+    test_wrapper_invariants()
     print("\nAll tests passed.")
 
 

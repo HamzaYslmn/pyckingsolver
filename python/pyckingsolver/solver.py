@@ -94,6 +94,7 @@ class SolverParams:
     column_generation_subproblem_tree_search_queue_size: int | None = None
     not_anytime_maximum_approximation_ratio: float | None = None
     not_anytime_tree_search_queue_size: int | None = None
+    not_anytime_tree_search_periodic_packing_queue_size: int | None = None
     not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size: int | None = None
     not_anytime_sequential_value_correction_number_of_iterations: int | None = None
     not_anytime_dichotomic_search_subproblem_tree_search_queue_size: int | None = None
@@ -132,7 +133,8 @@ class Solver:
         Args:
             instance: An `Instance` or a path to a JSON file.
             params: A `SolverParams` instance (preferred for many options).
-            json_output: Optional path to save the solution JSON.
+            json_output: Optional path to save the solver's certificate JSON
+                (readable back via `Solution.from_json`).
             cancel: Optional Event-like object (`.is_set()`). Once set, the
                 solver subprocess is killed and `SolverCancelled` is raised.
             on_improvement: Optional callback fed each improving certificate mid-solve,
@@ -184,7 +186,7 @@ class Solver:
             if bin_types:
                 sol.mark_fixed_items(bin_types)
             if json_output:
-                sol.to_json(json_output)
+                shutil.copy(sol_path, json_output)  # the certificate itself, geometry included
             if on_improvement is not None:
                 on_improvement(sol)
             return sol
@@ -281,6 +283,8 @@ _VALUE_FLAGS = {
     "not_anytime_maximum_approximation_ratio":
         "--not-anytime-maximum-approximation-ratio",
     "not_anytime_tree_search_queue_size": "--not-anytime-tree-search-queue-size",
+    "not_anytime_tree_search_periodic_packing_queue_size":
+        "--not-anytime-tree-search-periodic-packing-queue-size",
     "not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size":
         "--not-anytime-sequential-single-knapsack-subproblem-tree-search-queue-size",
     "not_anytime_sequential_value_correction_number_of_iterations":
@@ -373,11 +377,23 @@ def _merge_params(params: SolverParams | None, kwargs: dict[str, Any]) -> Solver
 
 
 def _read_metrics(path: Path) -> dict[str, Any]:
+    """Flatten the solver's `--output` file into one dict.
+
+    The file is `{Parameters, IntermediaryOutputs, Output}`; the useful numbers
+    are `Output.Solution` (BinCost, FullWastePercentage, DensityX, ...) plus the
+    run-level `Output` keys (Time, the per-objective bounds, IsProvenInfeasible).
+    `IntermediaryOutputs` holds one entry per improving solution and is dropped.
+    """
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
-    return raw.get("Solution", raw) if isinstance(raw, dict) else {}
+    if not isinstance(raw, dict):
+        return {}
+    out = raw.get("Output", raw)
+    metrics = dict(out.get("Solution") or {})
+    metrics.update({k: v for k, v in out.items() if k != "Solution"})
+    return metrics
 
 
 def _find_binary(problem_type: str) -> Path:

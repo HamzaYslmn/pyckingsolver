@@ -22,8 +22,10 @@ class Solution:
     """Parsed solver output. Geometry is in Shapely.
 
     `metrics` is populated by `Solver.solve()` from the solver's `--output`
-    JSON (e.g. `BinCost`, `FullWastePercentage`, `DensityX`). Empty when
-    metrics are unavailable.
+    JSON: the solution numbers (`BinCost`, `FullWastePercentage`, `DensityX`,
+    `ItemProfit`, `NumberOfBins`, ...) plus the run-level keys `Time`,
+    `IsProvenInfeasible` and the per-objective bounds (`KnapsackBound`,
+    `BinPackingBound`, ...). Empty when metrics are unavailable.
 
     `bins` may contain empty bins (no items): the solver skips bins nothing
     fits in but keeps them for position/cost accounting.
@@ -63,6 +65,12 @@ class Solution:
         return cls() if data is None else cls.from_dict(data)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to the sparse form upstream's `SolutionBuilder::read` accepts.
+
+        Carries no shapes on purpose: the C++ `fill_solution_file` tool rebuilds them
+        from the instance. For geometry, use `Solver.solve(json_output=...)`, which
+        keeps the solver's own certificate.
+        """
         out: dict[str, Any] = {"bins": [_bin_to_dict(b) for b in self.bins]}
         if self.metrics:
             out["metrics"] = self.metrics
