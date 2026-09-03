@@ -569,6 +569,24 @@ for instance in batch:
 
 Keyword arguments to `solve()` always override fields of `params`.
 
+### Streaming Improvements
+
+Pass `on_improvement` to see provisional layouts while the solver is still searching:
+
+```python
+solution = solver.solve(instance, time_limit=120, on_improvement=show_layout)
+```
+
+The Anytime solver rewrites its certificate on every improvement, so a callback forces
+`only_write_at_the_end=False` and the same 0.25 s poll that drives the adaptive stop parses
+each new certificate. A file caught mid-rewrite is retried on the next poll, so improvements
+closer together than the poll are coalesced: there is no callback per solver write.
+
+The callback runs on the calling thread, so keep it quick and hand real work to a queue.
+Provisional solutions carry no `metrics` and the layout can still change. `solve()` calls it
+once more with exactly the `Solution` it returns; raising from it kills the solve, and no
+certificate means no callback and a `None` return.
+
 ### Algorithm Control
 
 Fine-tune the solver's strategy:
@@ -676,7 +694,7 @@ for it in sol.all_items():
 ```
 
 `nest()` accepts the same keyword arguments as `Solver.solve()` (e.g.
-`time_limit`, `params=SolverParams(...)`, `json_output`).
+`time_limit`, `params=SolverParams(...)`, `json_output`, `on_improvement`).
 
 Pass any CLI flag directly for new solver features:
 

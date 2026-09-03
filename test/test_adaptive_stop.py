@@ -6,6 +6,7 @@ fast; one real solve then proves the wired-up path saves wall clock without losi
 Usage:  cd test && uv run python test_adaptive_stop.py
 """
 
+import json
 import sys
 import tempfile
 import time
@@ -28,6 +29,35 @@ def _writer(path: Path, writes: int, gap: float) -> list[str]:
             f"    p.write_text(str(i))\n"
             f"    time.sleep({gap})\n"
             f"time.sleep(30)"]
+
+
+_PARTIAL_WRITER = """import pathlib,sys,time
+p=pathlib.Path(sys.argv[1])
+for text in (sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]):
+    p.write_text(text)
+    time.sleep(0.5)"""
+
+
+def _certificate(items: int) -> str:
+    """A minimal certificate the wrapper can parse, with `items` placements."""
+    return json.dumps({"bins": [{"id": 0, "copies": 1, "items": [
+        {"id": 0, "x": i, "y": 0, "angle": 0, "mirror": False} for i in range(items)]}]})
+
+
+def test_torn_certificates_are_retried_and_improvements_delivered():
+    """A half-written certificate is skipped; every parseable one reaches the callback."""
+    torn = '{"bins": ['
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "solution.json"
+        seen = []
+        child = [sys.executable, "-c", _PARTIAL_WRITER, str(path),
+                 torn, _certificate(1), torn, _certificate(2)]
+        result, stalled = _run_solver(child, timeout=20, cwd=tmp, cancel=None,
+                                      sol_path=path, on_improvement=seen.append)
+
+    assert result.returncode == 0 and stalled is False
+    assert [s.total_item_count() for s in seen] == [1, 2], [s.total_item_count() for s in seen]
+    print(f"   torn certificates retried, {len(seen)} improvements delivered in order")
 
 
 # MARK: - Kill branches
@@ -113,19 +143,23 @@ def test_real_solve_stops_early_without_losing_items():
     """time_limit becomes a ceiling: same packing, a fraction of the wall clock."""
     limit = 20.0
     t0 = time.monotonic()
+    seen = []
     sol = Solver().solve(_instance(), params=SolverParams(
-        time_limit=limit, stall_timeout=1.5))
+        time_limit=limit, stall_timeout=1.5), on_improvement=seen.append)
     elapsed = time.monotonic() - t0
 
     assert sol.total_item_count() > 0, "stall kill returned an empty solution"
+    assert len(seen) >= 2, f"no streaming, only {len(seen)} delivery"
+    assert seen[-1] is sol, "the last delivery is not the returned solution"
     assert elapsed < limit * 0.6, f"no early stop: {elapsed:.1f}s of {limit:.0f}s"
     print(f"   real solve: {elapsed:.1f}s of {limit:.0f}s budget, "
-          f"{sol.total_item_count()} items placed")
+          f"{sol.total_item_count()} items placed, {len(seen) - 1} provisional layouts")
 
 
 def main():
     print("Adaptive Stop Tests")
     print("=" * 40)
+    test_torn_certificates_are_retried_and_improvements_delivered()
     test_first_solution_timeout_kills_wedged_solve()
     test_stall_timeout_kills_converged_solve_intact()
     test_natural_exit_is_not_stalled()
