@@ -9,5 +9,7 @@ python/.venv/
 python/packingsolver/bin/
 python/pyckingsolver/_crashes/
 python/README.md
+python/LICENSE
+python/LICENSE.packingsolver
 test/_tmp_*
 bin/

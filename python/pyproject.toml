@@ -1,10 +1,11 @@
 [project]
 name = "pyckingsolver"
-version = "0.8.0"
+version = "0.8.1"
 description = "Shapely-based Python interface for PackingSolver — 2D irregular bin packing & nesting"
 requires-python = ">=3.10"
 readme = {file = "README.md", content-type = "text/markdown"}  # copied in from ../README.md before build; hatchling refuses paths outside the project
-license = {text = "MIT"}
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "LICENSE.packingsolver"]  # copied in before build, like the readme above
 authors = [
     {name = "Hamza Yesilmen", email = "resmiyslmn@gmail.com"},
 ]
@@ -17,7 +18,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Manufacturing",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

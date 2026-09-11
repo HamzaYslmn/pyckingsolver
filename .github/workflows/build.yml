@@ -77,6 +77,8 @@ jobs:
       working-directory: python
       run: |
         cp ../README.md README.md
+        cp ../LICENSE LICENSE
+        cp ../extern/packingsolver/LICENSE LICENSE.packingsolver
         uv build --wheel -o ../dist
 
     - name: Tag wheel with platform

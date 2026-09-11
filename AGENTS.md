@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `9917fcb0f`, 2026-09-02).
-Python wrapper version: `0.8.0` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `c767f5428`, 2026-09-12).
+Python wrapper version: `0.8.1` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -85,6 +85,31 @@ so this compares the wrapper to that binary's CLI, its instance JSON reader
 - Upstream's `--log2stderr` is dead: `main.cpp` declares `log2stderr` but `read_args` checks
   `vm.count("log-to-stderr")`. `SolverParams.log_to_stderr` therefore does nothing. Worth an
   upstream one-liner.
+
+---
+
+## MARK: Recent Upstream Changes (2026-09-02 → 2026-09-12)
+
+Pulled `9917fcb0f` → `c767f5428` (23 commits). Bundled binary rebuilt + re-bundled. Six touch
+`src/irregular/`, and both dependency pins move with them: `shape` `1e57508` → `6ab9cb6`,
+`columngenerationsolver` `4e0987c` → `1274df4`.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `818453a5` | **shape bump: convex partition segfault (#558)** | Crash fix on our workload. `compute_convex_partition` emitted a degenerate zero-area part when `trapezoidation()` collapsed one side of a trapezoid to a point; computing an NFP against it threw `orbiting_shape is not convex` instead of packing it. Reported against real production data. |
+| `a3e8a96c` | **shape bump: `inflate()` segfault (#563)** | Crash fix on our workload. `find_point_strictly_inside` could return a point outside the shape (horizontal edge along the ray, or a reflex vertex on it), so the only valid face was dropped and `inflate()` dereferenced the empty list. `inflate()` builds the offset outline for `item_item_minimum_spacing`, which every spaced nest uses, on shapes with fillet arcs. |
+| `17402bf1` | **cap eager periodic-packing precompute by shape complexity** | Hang fix. `InstanceBuilder::build()` gated the self-NFP precompute on copy count alone. Upstream measured ~22 s at 442 vertices and unfinished after two minutes at 4068; above the new vertex cap the type falls back to plain AABB-grid blocks. Arc-approximated CAD outlines land in that range. |
+| `19e1e9c9` | check the time limit while expanding a node's children | Makes `time_limit` hold. `insertions()` and `children()` were uninterruptible, so one node could overrun the whole budget; the timer is now checked every 100 candidates. |
+| `b575ef46` | sequential_value_correction: plain space profit for the single-knapsack case | Packing quality change on high-copy pools. `initial_profit_exponent` drops 1.1 → 1.0 in `optimize_sequential_single_knapsack`, irregular included (`src/irregular/optimize.cpp:425`), which is a branch KNAPSACK auto-selects when copies dominate. Layouts change. |
+| `3fbf96e0` | compute periodic packings on simplified item shapes | All three callers now run the self/rotation-pair NFP on `shape_simplification(instance, 0.001, 64)` instead of the exact shape. Layouts change. |
+| `614ffa97` | cut out bin borders in `tree_search_periodic_packing`'s root | Only bites on non-rectangular bins, which the search previously packed outside of. No effect on rectangular bin types; it does make polygon bins usable. |
+| `a7e53303` | store `Resource::item_consumptions` sparsely | Build-time perf. `InstanceBuilder::build()` on 2000 item types and 5000 resources drops ~105 ms → ~4 ms. Aimed at rectangle's Benders, but irregular's consumers were updated too. |
+| rest | rectangle, box, boxstacks, onedimensional | Other problem types. Reached only by signature adaptations in the shared templates. |
+
+**Wrapper impact**: none. No CLI, instance-JSON or solution-JSON change. **Layouts change**: three
+commits alter `tree_search_periodic_packing` and one alters the single-knapsack SVC guide, so the
+0.7.0 benchmark numbers no longer describe this binary. Re-measure before moving a downstream
+version floor.
 
 ---
 
