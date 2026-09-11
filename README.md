@@ -4,7 +4,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/pyckingsolver.svg)](https://pypi.org/project/pyckingsolver/)
 [![Python 3.10+](https://img.shields.io/pypi/pyversions/pyckingsolver.svg)](https://pypi.org/project/pyckingsolver/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![Build](https://github.com/HamzaYslmn/pyckingsolver/actions/workflows/build.yml/badge.svg)](https://github.com/HamzaYslmn/pyckingsolver/actions)
 
 Pack irregular shapes into bins — rectangles, circles, arbitrary polygons with holes.
@@ -29,42 +29,28 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
-## What's New in 0.8.0
+## What's New in 0.8.1
 
-- **`ARC_RESOLUTION` now means vertices per full circle, and a circle costs 64 of them, not 256.**
-  `circle_polygon` used `Point.buffer(resolution=...)`, whose `resolution` counts segments per
-  *quadrant*, while `_sample_arc` on the parse side read the same constant as segments per full
-  circle. One name, two meanings, 4x apart. Vertex count is what the solver's runtime scales with:
-  fourteen distinct-radius circle types x4 copies on a 2000x1000 sheet at 3 mm spacing, KNAPSACK,
-  56 items placed either way, went **12.23 s -> 7.89 s (1.55x)**. Accuracy lost is 0.010% -> 0.161%
-  of area, a 0.06 mm sagitta at r=50 — an order of magnitude under any kerf. Packings change, so
-  pin `==0.7.0` if you need the old layouts verbatim.
-
-- **C++ pin moves to packingsolver `9917fcb0f` (master, 2026-09-02).** Two upstream fixes.
-  A subset-row cut in the shared column-generation template charged its resource once per item
-  *copy* instead of once per item *type*, overcharging the cut on pools with multi-copy types;
-  column generation is auto-selected for bin packing with several bin types, so irregular
-  reaches it. The other fix is a `onedimensional` MILP guard that irregular links but never
-  triggers.
-- **`copies_min` on item types.** `add_item(..., copies_min=2)` forces at least that many copies
-  to be packed. It only bites under `KNAPSACK`, where packing an item type is otherwise optional:
-  a 100x100 bin offered one 90x90 item at profit 1 and twenty-five 20x20 items at profit 50 packs
-  the smalls and drops the big one; `copies_min=1` on the big item packs it instead.
-- **`SolverParams.not_anytime_tree_search_periodic_packing_queue_size`** — the last
-  `packingsolver_irregular` CLI option without a wrapper field. Every flag the binary accepts is
-  now reachable from `SolverParams`.
-- **`on_improvement=` streams provisional layouts.** `solve()` calls it with each improving
-  certificate the poll loop catches, then once with the solution it returns. Adapted from
-  [@Cabalist](https://github.com/Cabalist)'s PR #4.
-- **`json_output=` now saves the solver's certificate verbatim** instead of re-serializing the
-  parsed solution. The old path wrote only id/x/y/angle/mirror, so reading the file back gave a
-  `Solution` with zero geometry. `Solution.to_json()` still writes that sparse form on demand —
-  it is upstream's own editable solution format, see *Debugging against the C++ solver*.
-- **`Solution.metrics` finally holds the metrics.** It used to hand back the entire `--output`
-  document (`Parameters`, `IntermediaryOutputs`, `Output`), so the documented `metrics["BinCost"]`
-  raised `KeyError`. It is now `Output.Solution` (`BinCost`, `FullWastePercentage`, `DensityX`,
-  `ItemProfit`, `NumberOfBins`, ...) merged with the run-level `Time`, `IsProvenInfeasible` and
-  the per-objective bounds. `IntermediaryOutputs`, one entry per improving solution, is dropped.
+- **The licence is now AGPL-3.0-or-later, not MIT.** The `LICENSE` file has been AGPL since the
+  first commit; `pyproject.toml` and the README badge said MIT, and PyPI published 0.8.0 under
+  that. This release makes the packaging agree with the file. 0.8.0 and earlier stay MIT for
+  anyone who already has them. The wheels now also ship the licence texts, which no release
+  before this one did: `LICENSE` plus `LICENSE.packingsolver` for the bundled MIT binary.
+- **C++ pin moves to packingsolver `c767f5428` (master, 2026-09-12)**, 23 commits, six of them in
+  `src/irregular/`. Two are segfault fixes in the `shape` dependency that this wrapper's own
+  workload reaches: a degenerate zero-area convex part that made NFP computation throw
+  (`#558`), and `inflate()` dereferencing an empty face list while building the offset outline
+  for `item_item_minimum_spacing` (`#563`). A third fixes a hang: the eager periodic-packing
+  precompute was gated on copy count alone, so a single shape with a few thousand vertices could
+  sit in a self-NFP for minutes; it is now capped on vertex count too and falls back to AABB-grid
+  blocks above it.
+- **`time_limit` is now honoured inside a node expansion.** `insertions()` and `children()` ran
+  uninterruptibly, so expanding one complex node could overrun the whole budget. The timer is
+  checked every 100 candidates.
+- **Layouts change.** Periodic packings are now computed on lightly simplified shapes, and the
+  single-pass sequential-value-correction knapsack guide drops its `space^1.1` profit exponent to
+  plain space. Both change which packing you get. Pin `==0.8.0` if you need the old layouts
+  verbatim, accepting that it carries the two segfaults above.
 
 Older release notes: [CHANGELOG.md](CHANGELOG.md).
 
@@ -808,6 +794,12 @@ The C++ solver ([fontanf/packingsolver](https://github.com/fontanf/packingsolver
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+AGPL-3.0-or-later, see [LICENSE](LICENSE).
 
-Based on [PackingSolver](https://github.com/fontanf/packingsolver) by Florian Fontan.
+Based on [PackingSolver](https://github.com/fontanf/packingsolver) by Florian Fontan, which is MIT
+licensed. The wheels bundle a compiled `packingsolver_irregular`, so upstream's notice ships with
+them as `LICENSE.packingsolver`.
+
+The binary is built with `-DPACKINGSOLVER_USE_CLP=OFF`. That flag is load bearing: Clp, CoinUtils
+and Osi are EPL-2.0, which does not combine with the AGPL. HiGHS (the solver actually used), Boost,
+nlohmann/json and every fontanf dependency are MIT or BSL-1.0 and combine fine.
