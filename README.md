@@ -29,28 +29,22 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
-## What's New in 0.8.1
+## What's New in 0.8.2
 
-- **The licence is now AGPL-3.0-or-later, not MIT.** The `LICENSE` file has been AGPL since the
-  first commit; `pyproject.toml` and the README badge said MIT, and PyPI published 0.8.0 under
-  that. This release makes the packaging agree with the file. 0.8.0 and earlier stay MIT for
-  anyone who already has them. The wheels now also ship the licence texts, which no release
-  before this one did: `LICENSE` plus `LICENSE.packingsolver` for the bundled MIT binary.
-- **C++ pin moves to packingsolver `c767f5428` (master, 2026-09-12)**, 23 commits, six of them in
-  `src/irregular/`. Two are segfault fixes in the `shape` dependency that this wrapper's own
-  workload reaches: a degenerate zero-area convex part that made NFP computation throw
-  (`#558`), and `inflate()` dereferencing an empty face list while building the offset outline
-  for `item_item_minimum_spacing` (`#563`). A third fixes a hang: the eager periodic-packing
-  precompute was gated on copy count alone, so a single shape with a few thousand vertices could
-  sit in a self-NFP for minutes; it is now capped on vertex count too and falls back to AABB-grid
-  blocks above it.
-- **`time_limit` is now honoured inside a node expansion.** `insertions()` and `children()` ran
-  uninterruptibly, so expanding one complex node could overrun the whole budget. The timer is
-  checked every 100 candidates.
-- **Layouts change.** Periodic packings are now computed on lightly simplified shapes, and the
-  single-pass sequential-value-correction knapsack guide drops its `space^1.1` profit exponent to
-  plain space. Both change which packing you get. Pin `==0.8.0` if you need the old layouts
-  verbatim, accepting that it carries the two segfaults above.
+- **C++ pin moves to packingsolver `3f4faae1a` (master, 2026-09-16).** The headline is a third
+  `shape` fix in the family 0.8.1 started: `item_item_minimum_spacing` with more than 16 copies of
+  certain shapes could fail instance building outright, either while computing the periodic-packing
+  self-NFP or while inflating the item's own shape by the spacing. Two numeric causes, both
+  upstream `shape` bugs: catastrophic cancellation in the line/circle and circle/circle
+  intersection routines for circles far from the world origin, throwing `outline area is not
+  positive`; and the arc intersection routines leaving a spurious duplicate root that made
+  `Shape::check()` report `shape self intersect` on the item's own inflated shape.
+- **`SolverParams.reduce` exposes upstream's new instance reduction.** Preprocessing that merges
+  identical item types, and under `KNAPSACK` trims negative-profit item types down to their
+  `copies_min`. Upstream wires it into `optimize()` **on by default** and maps the answer back, so
+  solutions still come back in original item type ids. Set `reduce=False` to skip it. Note that a
+  `profit` left at the default is never negative by the time reduction sees it: the wrapper omits
+  it from the instance JSON, so the C++ builder's own area-based default applies.
 
 Older release notes: [CHANGELOG.md](CHANGELOG.md).
 

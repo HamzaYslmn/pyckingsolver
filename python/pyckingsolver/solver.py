@@ -64,6 +64,9 @@ class SolverParams:
     use_sequential_value_correction: bool | None = None
     use_column_generation: bool | None = None
     use_dichotomic_search: bool | None = None
+    # Instance reduction (preprocessing): merges identical item types, and under KNAPSACK
+    # trims negative-profit types to copies_min. Upstream defaults it ON; set False to skip it.
+    reduce: bool | None = None
     # sequential-feasibility toggles were dropped upstream — it now runs
     # automatically inside tree_search/local_search, no flag to expose.
 
@@ -259,6 +262,7 @@ _BOOL_VALUE_FLAGS = {
     "use_sequential_value_correction": "--use-sequential-value-correction",
     "use_column_generation": "--use-column-generation",
     "use_dichotomic_search": "--use-dichotomic-search",
+    "reduce": "--reduce",
 }
 
 _VALUE_FLAGS = {

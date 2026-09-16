@@ -2,6 +2,29 @@
 
 Older release notes, moved out of the README. The current release's notes stay there.
 
+## 0.8.1
+
+- **The licence is now AGPL-3.0-or-later, not MIT.** The `LICENSE` file has been AGPL since the
+  first commit; `pyproject.toml` and the README badge said MIT, and PyPI published 0.8.0 under
+  that. This release makes the packaging agree with the file. 0.8.0 and earlier stay MIT for
+  anyone who already has them. The wheels now also ship the licence texts, which no release
+  before this one did: `LICENSE` plus `LICENSE.packingsolver` for the bundled MIT binary.
+- **C++ pin moves to packingsolver `c767f5428` (master, 2026-09-12)**, 23 commits, six of them in
+  `src/irregular/`. Two are segfault fixes in the `shape` dependency that this wrapper's own
+  workload reaches: a degenerate zero-area convex part that made NFP computation throw
+  (`#558`), and `inflate()` dereferencing an empty face list while building the offset outline
+  for `item_item_minimum_spacing` (`#563`). A third fixes a hang: the eager periodic-packing
+  precompute was gated on copy count alone, so a single shape with a few thousand vertices could
+  sit in a self-NFP for minutes; it is now capped on vertex count too and falls back to AABB-grid
+  blocks above it.
+- **`time_limit` is now honoured inside a node expansion.** `insertions()` and `children()` ran
+  uninterruptibly, so expanding one complex node could overrun the whole budget. The timer is
+  checked every 100 candidates.
+- **Layouts change.** Periodic packings are now computed on lightly simplified shapes, and the
+  single-pass sequential-value-correction knapsack guide drops its `space^1.1` profit exponent to
+  plain space. Both change which packing you get. Pin `==0.8.0` if you need the old layouts
+  verbatim, accepting that it carries the two segfaults above.
+
 ## 0.8.0
 
 - **`ARC_RESOLUTION` now means vertices per full circle, and a circle costs 64 of them, not 256.**

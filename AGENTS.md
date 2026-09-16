@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `c767f5428`, 2026-09-12).
-Python wrapper version: `0.8.1` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `3f4faae1a`, 2026-09-16).
+Python wrapper version: `0.8.2` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -85,6 +85,25 @@ so this compares the wrapper to that binary's CLI, its instance JSON reader
 - Upstream's `--log2stderr` is dead: `main.cpp` declares `log2stderr` but `read_args` checks
   `vm.count("log-to-stderr")`. `SolverParams.log_to_stderr` therefore does nothing. Worth an
   upstream one-liner.
+
+---
+
+## MARK: Recent Upstream Changes (2026-09-12 → 2026-09-16)
+
+Pulled `c767f5428` → `3f4faae1a` (5 commits). Bundled binary rebuilt + re-bundled. Two reach
+irregular; `shape` moves again, `columngenerationsolver` does not.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `3f4faae1` | **shape bump: invalid inflated item shapes (#574)** | Instance-build failure on this wrapper's own workload. Two numeric bugs: catastrophic cancellation in the line/circle and circle/circle intersection routines, which made a genuine crossing indistinguishable from a tangency for circles far from the origin and threw `outline area is not positive` during `compute_union`; and the line/arc and arc/arc routines discarding only one of two roots duplicating a shared endpoint, leaving a spurious intersection that made `Shape::check()` report `shape self intersect` on an item's own inflated shape. Together they broke `item_item_minimum_spacing` with more than 16 copies of some shapes, in either the periodic-packing self-NFP or the spacing inflate. Third fix in this family after 0.8.1's #558 and #563. |
+| `24decc4c` | **instance reduction added to irregular, exposed as `--reduce`** | New preprocessing, **on by default**, wrapping the whole `optimize()` dispatch and mapping back through `unreduce_solution`. Two operations: merging identical item types (any objective), and trimming negative-profit item types to `copies_min` (Knapsack only). Now reachable as `SolverParams.reduce`. |
+| `7984aeba` | feasibility callback returns cuts alongside its verdict | No behaviour change; `FeasibilityCallback` is unused in every problem type. Groundwork for solving rectangle's Benders master incrementally. |
+| `a944efe4` | rectangle: incompatible-triplet cuts in Benders decomposition | Other problem type. |
+| `92e772cd` | boxstacks: skip unsized bins in `feasible_axle_weights` (#576) | Other problem type. |
+
+**Wrapper impact**: one additive change, `SolverParams.reduce` → `--reduce`, which keeps every CLI
+option the binary accepts reachable from `SolverParams`. No instance-JSON or solution-JSON change:
+reduction is internal to `optimize()` and the solution comes back in original item type ids.
 
 ---
 
@@ -381,6 +400,7 @@ All 11 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 | `use_sequential_value_correction` | ✅ | ✅ | |
 | `use_column_generation` | ✅ | ✅ | |
 | `use_dichotomic_search` | ✅ | ✅ | |
+| `reduce` | ✅ | ✅ | NEW — instance reduction (preprocessing). Upstream default is on. |
 | `linear_programming_solver` | ✅ | ✅ | "CLP" or "Highs" |
 | `anchor` | ✅ | ✅ | Post-processing (renamed from `anchor_to_corner`) |
 | `anchor_x_weight` | ✅ | ✅ | Horizontal slide weight (+left, -right, 0=off) |
