@@ -2,6 +2,23 @@
 
 Older release notes, moved out of the README. The current release's notes stay there.
 
+## 0.8.2
+
+- **C++ pin moves to packingsolver `3f4faae1a` (master, 2026-09-16).** The headline is a third
+  `shape` fix in the family 0.8.1 started: `item_item_minimum_spacing` with more than 16 copies of
+  certain shapes could fail instance building outright, either while computing the periodic-packing
+  self-NFP or while inflating the item's own shape by the spacing. Two numeric causes, both
+  upstream `shape` bugs: catastrophic cancellation in the line/circle and circle/circle
+  intersection routines for circles far from the world origin, throwing `outline area is not
+  positive`; and the arc intersection routines leaving a spurious duplicate root that made
+  `Shape::check()` report `shape self intersect` on the item's own inflated shape.
+- **`SolverParams.reduce` exposes upstream's new instance reduction.** Preprocessing that merges
+  identical item types, and under `KNAPSACK` trims negative-profit item types down to their
+  `copies_min`. Upstream wires it into `optimize()` **on by default** and maps the answer back, so
+  solutions still come back in original item type ids. Set `reduce=False` to skip it. Note that a
+  `profit` left at the default is never negative by the time reduction sees it: the wrapper omits
+  it from the instance JSON, so the C++ builder's own area-based default applies.
+
 ## 0.8.1
 
 - **The licence is now AGPL-3.0-or-later, not MIT.** The `LICENSE` file has been AGPL since the

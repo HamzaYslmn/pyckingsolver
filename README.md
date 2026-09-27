@@ -29,22 +29,20 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
-## What's New in 0.8.2
+## What's New in 0.8.3
 
-- **C++ pin moves to packingsolver `3f4faae1a` (master, 2026-09-16).** The headline is a third
-  `shape` fix in the family 0.8.1 started: `item_item_minimum_spacing` with more than 16 copies of
-  certain shapes could fail instance building outright, either while computing the periodic-packing
-  self-NFP or while inflating the item's own shape by the spacing. Two numeric causes, both
-  upstream `shape` bugs: catastrophic cancellation in the line/circle and circle/circle
-  intersection routines for circles far from the world origin, throwing `outline area is not
-  positive`; and the arc intersection routines leaving a spurious duplicate root that made
-  `Shape::check()` report `shape self intersect` on the item's own inflated shape.
-- **`SolverParams.reduce` exposes upstream's new instance reduction.** Preprocessing that merges
-  identical item types, and under `KNAPSACK` trims negative-profit item types down to their
-  `copies_min`. Upstream wires it into `optimize()` **on by default** and maps the answer back, so
-  solutions still come back in original item type ids. Set `reduce=False` to skip it. Note that a
-  `profit` left at the default is never negative by the time reduction sees it: the wrapper omits
-  it from the instance JSON, so the C++ builder's own area-based default applies.
+- **C++ pin moves to packingsolver `bf273e9bf` (master, 2026-09-27)**, a sync release with no wrapper
+  change. Two more `shape` bumps close the instance-building failures reported upstream in #595 and
+  #598: circular holes that looked self-intersecting after arc approximation, holes filled by a
+  wrong-orientation union, tangencies that failed boolean operations or overflowed the stack, and
+  self-NFPs that were not exact, which broke the periodic-packing lattice search. Also fixed: a
+  `trapezoidation()` segfault when a touching hole consumes the outline, and a crash on a hole not
+  contained in its outer shape. Spacing on arc-heavy parts with many copies is the workload all of
+  these sit on.
+- **Sequential value correction no longer poisons KNAPSACK profits.** An item type left fully
+  unpacked divided 0 by 0 on its profit update, and the bin-packing "every copy must go in" pressure
+  term also applied under KNAPSACK. Both are fixed upstream in the shared template, so layouts on
+  high-copy knapsack pools can change.
 
 Older release notes: [CHANGELOG.md](CHANGELOG.md).
 

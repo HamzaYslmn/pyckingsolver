@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `3f4faae1a`, 2026-09-16).
-Python wrapper version: `0.8.2` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `bf273e9bf`, 2026-09-27).
+Python wrapper version: `0.8.3` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -85,6 +85,25 @@ so this compares the wrapper to that binary's CLI, its instance JSON reader
 - Upstream's `--log2stderr` is dead: `main.cpp` declares `log2stderr` but `read_args` checks
   `vm.count("log-to-stderr")`. `SolverParams.log_to_stderr` therefore does nothing. Worth an
   upstream one-liner.
+
+---
+
+## MARK: Recent Upstream Changes (2026-09-16 → 2026-09-27)
+
+Pulled `3f4faae1a` → `bf273e9bf` (14 commits). Bundled binary rebuilt + re-bundled. Dependency pins
+move: `shape` `4d53dd0` → `b347249` (two bumps), `columngenerationsolver` `1274df4` → `091ee51`,
+`mathoptsolverscmake` `66b6e34` → `358904e`.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `bf273e9b` | **shape bump: irregular instance-building failures (#595, #598)** | Crash fixes on this wrapper's own workload. The line-segment approximation of an arc ended with a degenerate segment, so circular holes looked self-intersecting (shape#69); the fallback union used clockwise extras for anticlockwise arcs and filled holes (shape#70); tangencies came out as two intersections micro-units apart or as none, failing boolean ops with `face area is not positive` or overflowing the stack (shape#71, #72); `no_fit_polygon` merged nearly parallel edges in the wrong order, so the self-NFPs periodic packing relies on were not exact and the lattice unions failed (shape#73). |
+| `9ae71316` | **shape bump + adapt to a stricter `convex_hull`** | More crash fixes: `trapezoidation()` segfault when a touching hole consumes the outline, a crash on a hole not contained in its outer shape, `deflate()` building a self-intersecting piece past an arc's radius. `convex_hull` now rejects circular arcs, so irregular's three call sites (`rotations.cpp`, `large_item_first.cpp`, `tree_search.cpp`) approximate arcs first. The wrapper sends Shapely polygons, which never carry arcs, so that part is inert here. |
+| `c119bdbf` | **sequential value correction: Knapsack shortfall term and a 0/0 profit** | Shared template, reaches irregular's KNAPSACK SVC branch. An item type left fully unpacked divided 0 by 0 when its profit was updated, poisoning later iterations with NaN; the "unpacked copies" pressure term, meant for bin packing where every copy must go in, also applied to KNAPSACK. Both fixed. Layouts on high-copy knapsack pools can change. |
+| `4a227d5e` | column generation: configurable rounding heuristic | Default stays `Initial`, which is what irregular had. No change here. |
+| rest | boxstacks, onedimensional, rectangle, weight tolerance, truck | Other problem types. |
+
+**Wrapper impact**: none. No CLI, instance-JSON or solution-JSON change; `packingsolver_irregular`
+accepts exactly the flags it did in 0.8.2.
 
 ---
 
