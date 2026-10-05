@@ -81,7 +81,7 @@ def nest(items: Sequence[Polygon],
 def _as_list(bins) -> list:
     if isinstance(bins, Polygon):
         return [bins]
-    if isinstance(bins, tuple) and len(bins) == 2 and \
+    if isinstance(bins, (tuple, list)) and len(bins) == 2 and \
             all(isinstance(v, (int, float)) for v in bins):
         return [bins]
     return list(bins)

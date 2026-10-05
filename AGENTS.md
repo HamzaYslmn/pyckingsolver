@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `bf273e9bf`, 2026-09-27).
-Python wrapper version: `0.8.3` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `1f352c404`, 2026-10-05).
+Python wrapper version: `0.9.0` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -15,7 +15,6 @@ When bumping the Python wrapper version, update all current-version tags:
 - `python/uv.lock` and `test/uv.lock` — `[[package]] name = "pyckingsolver"` version
 - This file's top `Python wrapper version` line
 - `README.md` release/current binary note if the bundled C++ solver pin changed
-- `python/pyckingsolver/types.py` top commit note if the mirrored upstream C++ commit changed
 - Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
 
 Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
@@ -53,13 +52,24 @@ so this compares the wrapper to that binary's CLI, its instance JSON reader
   quality-rule surface as inert; it still is.
 - `Parameters::scale_value` — likewise C++-only.
 
-**Live upstream crashes, re-checked on `9917fcb0f`**
+**Live upstream bugs, re-checked on `1f352c404`**
 
-- `OPEN_DIMENSION_XY` still dies with `0xC0000005` (access violation) on a plain
-  rectangles-in-a-huge-bin instance; `test/generate_images.py::ex05` is the reproducer and is the
-  one gallery image that does not render. Unchanged since it was first seen.
-- Native `type:"circle"` throws in `compute_shape_supports` (exit 1), which is why
-  `geometry.py` discretizes circles instead of passing them through.
+- `OPEN_DIMENSION_XY` without `open_dimension_xy_aspect_ratio` is now a clean `build()` error;
+  with a ratio it solves (12 rectangles, ratio 1.5, 3 s). The old `0xC0000005` dumps in
+  `_crashes/` were exactly that missing ratio.
+- Local search ignores `item_bin_minimum_spacing` under `BIN_PACKING`: 4 30x30 items in a
+  100x100 bin with spacing 5 touch the edge (min coordinate 0.0) with `use_local_search=True`,
+  and sit at 5.0 under tree search, sequential single knapsack or the default selection. A lone
+  item that nearly fills the bin takes the same path. Worth an upstream report.
+- `main.cpp` declares two flags it never reads: `--log2stderr` (`read_args` checks
+  `log-to-stderr`) and `--item-bin-minimum-spacing`. The wrapper dropped `log_to_stderr` and
+  writes `item_bin_minimum_spacing` into the bins itself; `test_nesting.py` lists both as dead.
+- The binary writes `null` to the certificate at t~0 and rewrites the same layout on every
+  bound update. The adaptive-stop watchdog counts only a changed, non-empty layout as progress.
+- A bin's `holes` are dropped: the reader parses bins as a plain `Shape`. The wrapper sends a
+  bin Polygon's interiors as defects, spaced by the bin's item-bin spacing.
+- Native `type:"circle"` items threw in `compute_shape_supports` on `9917fcb0f`; circular
+  *bins* work since `2db32256`. `geometry.py` still discretizes circles.
 - **A pinned item's holes are not free space.** Measured on `9917fcb0`: a 150x100 bin holding
   one 4-hole plate and 8 R=8 discs places 4 discs, all four inside holes, when the plate is a
   normal item; pin the same plate with `add_fixed_item` and the solve places **zero** discs.
@@ -75,16 +85,43 @@ so this compares the wrapper to that binary's CLI, its instance JSON reader
   only *emits* `type:"polygon"`, so every arc goes in as a 64-segment approximation. Emitting
   arcs would need a non-Shapely carrier for the input geometry (Shapely has no arc primitive),
   i.e. a new API surface, so it is a deliberate deferral, not an oversight.
-  Native `type:"circle"` is still unusable: it throws in `compute_shape_supports` (exit 1),
-  which is what `geometry.py` documents.
+  Whole circles are the exception since 0.9.0: `ItemShape.circle` carries `(x, y, r)` and goes
+  out as native `type:"circle"` (measured on `1f352c404`: 30 R=10 discs, spacing 1, 100x100
+  knapsack, exit 0, `CircularArc` back). Bins and defects stay polygons (inscribed is the
+  safe direction there).
+
+**Only in upstream's library and bindings (not readable from the instance JSON or CLI)**
+
+Quality rules, resources, tree-search guides, solution-pool size, reduction sub-options and
+the periodic-packing thresholds. Wrap them only once `instance_builder.cpp::read` or
+`main.cpp` reads them.
 - **Other problem types.** `rectangle`, `rectangleguillotine`, `box`, `boxstacks`,
   `onedimensional` each have their own binary, instance JSON and solution JSON. None are
   shipped or wrapped. `Objective.BIN_PACKING_CUTTING_COST` belongs to `rectangleguillotine`;
   irregular accepts the string and exits 0 with `bins: null`, so it is deliberately absent
   from the wrapper's `Objective`.
-- Upstream's `--log2stderr` is dead: `main.cpp` declares `log2stderr` but `read_args` checks
-  `vm.count("log-to-stderr")`. `SolverParams.log_to_stderr` therefore does nothing. Worth an
-  upstream one-liner.
+
+---
+
+## MARK: Recent Upstream Changes (2026-09-27 → 2026-10-05)
+
+Pulled `bf273e9bf` → `1f352c404` (60 commits, mostly the new nanobind Python bindings, a WebAssembly
+module and its web page). No dependency pin moves for irregular. Bundled binary rebuilt + re-bundled.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `49a60984` | **Remove the `Default` objective** | `"default"` is no longer parsed. Wrapper drops `Objective.DEFAULT` (breaking, hence 0.9.0). |
+| `29ff819b` | **`copies_min != copies` rejected outside KNAPSACK** | `build()` throws. Wrapper only emits `copies_min` when set, so unset items are fine; documented in `add_item`. |
+| `3d2d2776` | Item `copies == -1` resolved under KNAPSACK | Unlimited copies: as many as the total bin area allows; rejected if a bin type is unlimited too. Works through `add_item(copies=-1)` unchanged. |
+| `ff718402`, local search | Local search: no placement inside a full bin, `fits_some_bin` on sub-instances, iteration cap | New CLI flag `--not-anytime-local-search-maximum-number-of-iterations-without-improvement` → `SolverParams` field of the same name. |
+| `fd45c17b`, `e501ec5f` | Infeasibility proven upfront (item fits no bin, 1D relaxation) | Surfaces as `IsProvenInfeasible`; no wrapper change. |
+| `bb1ed9e5`, `77f97555` | Sequential feasibility fixed for OpenDimensionXY; ODXY without aspect ratio now throws | Wrapper unchanged. |
+| `2db32256` | Circular bins | Inert: the wrapper sends polygonized circles. |
+| `e2e6b42b`, `9bcc14ab` | Holes kept on copied item types; `add_fixed_item`/`can_contain` bounds checks | Robustness. |
+| `1d03afab` | Upstream nanobind Python bindings (`PACKINGSOLVER_BUILD_PYTHON`, default OFF) | Not used: the CI build is unaffected and this wrapper keeps the subprocess model (crash isolation, hard kill). |
+| `e0ceb677` | Readers reject unknown enum values, zero dimensions | The wrapper only writes known values. |
+
+**Wrapper impact**: `Objective.DEFAULT` removed, one new `SolverParams` field.
 
 ---
 
@@ -403,7 +440,7 @@ Pulled `713d0dbea` → `da2af179b` (7 commits). Bundled binary rebuilt + re-bund
 | `scale_value` | ❌ | ✅ | Auto-computed in C++ `build()`, not in JSON |
 
 ### Objectives
-All 11 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_WITH_LEFTOVERS`, `OPEN_DIMENSION_X`, `OPEN_DIMENSION_Y`, `OPEN_DIMENSION_Z`, `OPEN_DIMENSION_XY`, `VARIABLE_SIZED_BIN_PACKING`, `SEQUENTIAL_ONEDIMENSIONAL_RECTANGLE_SUBPROBLEM`, `FEASIBILITY`.
+The 8 objectives irregular solves: `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_WITH_LEFTOVERS`, `OPEN_DIMENSION_X`, `OPEN_DIMENSION_Y`, `OPEN_DIMENSION_XY` (aspect ratio required), `VARIABLE_SIZED_BIN_PACKING`, `FEASIBILITY`. `OpenDimensionZ` and the sequential 1D subproblem throw in irregular, so 0.9.0 dropped them.
 
 ### Solver CLI Parameters
 | Parameter | Python | C++ CLI | Notes |
@@ -425,7 +462,7 @@ All 11 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 | `anchor_x_weight` | ✅ | ✅ | Horizontal slide weight (+left, -right, 0=off) |
 | `anchor_y_weight` | ✅ | ✅ | Vertical slide weight (+bottom, -top, 0=off) |
 | `item_item_minimum_spacing` (CLI override) | ✅ | ✅ | |
-| `item_bin_minimum_spacing` (CLI override) | ✅ | ✅ | |
+| `item_bin_minimum_spacing` (override) | ✅ | ✅ | `main.cpp` never reads the flag: the wrapper writes it into every bin |
 | `leftover_mode` (CLI override) | ✅ | ✅ | |
 | `bin_unweighted` | ✅ | ✅ | |
 | `unweighted` | ✅ | ✅ | |
@@ -433,7 +470,7 @@ All 11 objectives supported: `DEFAULT`, `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_
 | `seed` | ✅ | ✅ | Currently unused by solver |
 | `only_write_at_the_end` | ✅ | ✅ | |
 | `group_identical_bins` | ✅ | ✅ | NEW — post-processing to merge identical bins |
-| All tuning params (approx ratio, queue sizes, etc.) | ✅ | ✅ | 9 tuning knobs |
+| All tuning params (approx ratio, queue sizes, etc.) | ✅ | ✅ | All `not_anytime_*`, ratio and queue knobs |
 | `extra_args` | ✅ | — | Forward-compat escape hatch |
 | `max_cores` | ✅ | — | CPU affinity limit (Linux/Docker/Windows) |
 
@@ -604,6 +641,7 @@ For typical CAD nesting (100+ unique parts, copies=1, items fit ~20+ per bin):
 | `not_anytime_tree_search_queue_size` | 512 | Tree search beam width in NotAnytime mode |
 | `not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size` | 512 | SSK subproblem beam |
 | `not_anytime_dichotomic_search_subproblem_tree_search_queue_size` | 128 | Dichotomic search beam |
+| `not_anytime_local_search_maximum_number_of_iterations_without_improvement` | -1 | Local search shrinkage cap (non-Anytime) |
 | `sequential_value_correction_subproblem_tree_search_queue_size` | 128 | SVC inner knapsack beam |
 | `column_generation_subproblem_tree_search_queue_size` | 128 | CG inner knapsack beam |
 

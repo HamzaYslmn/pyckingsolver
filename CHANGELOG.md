@@ -2,6 +2,21 @@
 
 Older release notes, moved out of the README. The current release's notes stay there.
 
+## 0.8.3
+
+- **C++ pin moves to packingsolver `bf273e9bf` (master, 2026-09-27)**, a sync release with no wrapper
+  change. Two more `shape` bumps close the instance-building failures reported upstream in #595 and
+  #598: circular holes that looked self-intersecting after arc approximation, holes filled by a
+  wrong-orientation union, tangencies that failed boolean operations or overflowed the stack, and
+  self-NFPs that were not exact, which broke the periodic-packing lattice search. Also fixed: a
+  `trapezoidation()` segfault when a touching hole consumes the outline, and a crash on a hole not
+  contained in its outer shape. Spacing on arc-heavy parts with many copies is the workload all of
+  these sit on.
+- **Sequential value correction no longer poisons KNAPSACK profits.** An item type left fully
+  unpacked divided 0 by 0 on its profit update, and the bin-packing "every copy must go in" pressure
+  term also applied under KNAPSACK. Both are fixed upstream in the shared template, so layouts on
+  high-copy knapsack pools can change.
+
 ## 0.8.2
 
 - **C++ pin moves to packingsolver `3f4faae1a` (master, 2026-09-16).** The headline is a third

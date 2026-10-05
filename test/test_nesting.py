@@ -3,15 +3,18 @@
 Usage:  cd pyckingsolver && uv run --directory python python ../test/test_nesting.py
 """
 
+import dataclasses
 import json
+import math
+import re
 import subprocess
 import tempfile
 from pathlib import Path
 
 import pymupdf
-from shapely.geometry import Polygon, Point
+from shapely.geometry import MultiPolygon, Polygon, Point
 
-from pyckingsolver import Instance, InstanceBuilder, Objective, Solution, Solver
+from pyckingsolver import Instance, InstanceBuilder, Objective, Solution, Solver, SolverInfeasible, SolverParams
 from pyckingsolver.geometry import ARC_RESOLUTION, circle_polygon
 
 # MARK: - Paths
@@ -228,8 +231,107 @@ def test_wrapper_invariants():
     assert {"id", "x", "y", "angle", "mirror"} <= bin0["items"][0].keys(), (
         f"item keys: {sorted(bin0['items'][0])}")
 
+    # Every main.cpp option is emitted by _build_cmd, and every SolverParams field reaches one.
+    from pyckingsolver import solver as s
+    main_cpp = Path(__file__).parents[1] / "extern/packingsolver/src/irregular/main.cpp"
+    cpp = {"--" + o for o in re.findall(r'^\s*\("([a-z0-9-]+)[,"]', main_cpp.read_text(), re.M)}
+    attrs = s._BOOL_VALUE_FLAGS + s._VALUE_FLAGS + s._PRESENCE_FLAGS + s._TRUE_ONLY_FLAGS
+    fixed = {"--input", "--certificate", "--output", "--time-limit", "--verbosity-level"}
+    dead = {"--log2stderr", "--item-bin-minimum-spacing"}  # declared in main.cpp, never read there
+    sent = {s._flag(a) for a in attrs} | fixed | dead
+    assert cpp == sent, f"flag drift: {cpp ^ sent}"
+    wrapper_only = {"time_limit", "verbosity_level", "stall_timeout", "first_solution_timeout",
+                    "extra_args", "item_bin_minimum_spacing"}
+    unmapped = {f.name for f in dataclasses.fields(SolverParams)} - set(attrs) - wrapper_only
+    assert not unmapped, f"SolverParams fields never sent: {unmapped}"
+
     print(f"   copies_min: {free_big} -> {forced_big} big item, {n}-gon circles, "
-          f"{len(m)} metric keys, both JSON forms intact")
+          f"{len(m)} metric keys, both JSON forms intact, {len(cpp)} CLI flags in sync")
+
+
+def test_wire_contract():
+    """What the C++ silently drops or rejects is handled on the Python side."""
+    print("\n[5] Wire contract")
+    solver = Solver()
+
+    # A bin hole is a no-go zone (the C++ reads bins without holes).
+    b = InstanceBuilder(Objective.KNAPSACK)
+    hole = Polygon([(40, 40), (60, 40), (60, 60), (40, 60)])
+    b.add_bin(Polygon([(0, 0), (100, 0), (100, 100), (0, 100)], [hole.exterior.coords]))
+    b.add_item_type_rectangle(10, 10, copies=100, profit=1)
+    inst = b.build()
+    sol = solver.solve(inst, time_limit=2)
+    inside = [it for it in sol.all_items() if it.shapes[0].intersection(hole).area > 1e-6]
+    assert not inside, f"{len(inside)} items placed in the bin hole"
+
+    # build() is a snapshot; a fractional time limit is not truncated to 0.
+    b.add_defect(0, Polygon([(0, 0), (5, 0), (5, 5)]))
+    assert not inst.bin_types[0].defects, "builder change leaked into a built Instance"
+    from pyckingsolver.solver import _build_cmd
+    cmd = _build_cmd(Path("x"), Path("i"), Path("c"), Path("o"), SolverParams(time_limit=0.5))
+    assert cmd[cmd.index("--time-limit") + 1] == "0.5"
+
+    # A MultiPolygon item is one item of several shapes; Z coordinates are dropped.
+    b2 = InstanceBuilder(Objective.KNAPSACK)
+    b2.add_bin_type_rectangle(100, 100)
+    b2.add_item(MultiPolygon([_rect(10, 10), Polygon([(20, 0, 5), (30, 0, 5), (30, 10, 5), (20, 10, 5)])]),
+                profit=1)
+    sol2 = solver.solve(b2.build(), time_limit=2)
+    assert sol2 and len(sol2.all_items()[0].shapes) == 2, "MultiPolygon item lost a part"
+
+    # item_bin_minimum_spacing reaches the bins (tree search: upstream local search ignores it).
+    b3 = InstanceBuilder(Objective.BIN_PACKING)
+    b3.add_bin_type_rectangle(100, 100)
+    b3.add_item_type_rectangle(30, 30, copies=4)
+    sol3 = solver.solve(b3.build(), time_limit=2, use_tree_search=True, item_bin_minimum_spacing=5)
+    edge = min(min(it.shapes[0].bounds[:2]) for it in sol3.all_items())
+    assert edge >= 5 - 1e-6, f"item {edge} from the bin edge, spacing 5"
+
+    # Proven infeasible raises, naming the item type that fits no bin; rotating it would fit.
+    b4 = InstanceBuilder(Objective.BIN_PACKING)
+    b4.add_bin_type_rectangle(40, 20)
+    b4.add_item_type_rectangle(10, 10)
+    b4.add_item_type_rectangle(10, 30)
+    inst4 = b4.build()
+    assert inst4.fits_some_bin(0) and not inst4.fits_some_bin(1)
+    try:
+        solver.solve(inst4, time_limit=2)
+        raise AssertionError("infeasible instance returned")
+    except SolverInfeasible as e:
+        assert e.item_type_ids == [1], e.item_type_ids
+    b4.add_item_type_rectangle(10, 30, allowed_rotations=[0, 90])
+    assert b4.build().fits_some_bin(2)
+
+    # Typed stats: 4 30x30 squares in one 100x100 bin is optimal for BIN_PACKING.
+    assert sol3.number_of_items == 4 and sol3.number_of_bins == 1 and sol3.is_proven_optimal
+
+    # Fixed items turn upstream's reduction off: it merges identical pinned types and throws.
+    b6 = InstanceBuilder(Objective.KNAPSACK)
+    b6.add_bin_type_rectangle(200, 200)
+    for i in range(3):
+        b6.add_fixed_item(0, b6.add_item_type_rectangle(20, 20), (i * 30, 0))
+    b6.add_item_type_rectangle(20, 20, copies=5, profit=1)
+    assert solver.solve(b6.build(), time_limit=2).number_of_items == 8
+
+    # A radius is a native circle: exact discs reach the solver, arcs come back.
+    b5 = InstanceBuilder(Objective.KNAPSACK)
+    b5.add_bin_type_rectangle(100, 100)
+    b5.add_item(10.0, copies=30, profit=1)
+    inst5 = b5.build()
+    assert inst5.to_dict()["item_types"][0]["type"] == "circle"
+    assert Instance.from_dict(inst5.to_dict()).item_types[0].shapes[0].circle == (0.0, 0.0, 10.0)
+    sol5 = solver.solve(inst5, time_limit=2)
+    discs = sol5.all_items()
+    assert discs and all(abs(d.shapes[0].area - math.pi * 100) < 1.0 for d in discs)
+
+    # A relative instance path resolves against the caller's cwd, not the temp dir.
+    with tempfile.TemporaryDirectory(dir=".") as d:
+        rel = Path(Path(d).name) / "inst.json"
+        b2.build().to_json(rel)
+        assert solver.solve(str(rel), time_limit=2) is not None
+
+    print(f"   bin hole respected ({len(sol.all_items())} items), snapshot build, 0.5s limit, "
+          f"MultiPolygon/Z item, item-bin spacing, SolverInfeasible names the misfit, typed stats, {len(discs)} native discs, relative path")
 
 
 # MARK: - Main
@@ -242,6 +344,7 @@ def main():
     test_holes_with_fillers()
     test_metal_cutting()
     test_wrapper_invariants()
+    test_wire_contract()
     print("\nAll tests passed.")
 
 

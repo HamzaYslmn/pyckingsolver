@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import Any
 
+from shapely.affinity import rotate, scale
 from shapely.geometry import MultiPolygon, Polygon
 
 from pyckingsolver.geometry import (
@@ -67,6 +69,22 @@ class Instance:
     def from_json(cls, path: str | Path) -> Instance:
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
+    def fits_some_bin(self, item_type_id: int) -> bool:
+        """Upstream's cheap check: does the item's bounding box, at one of its discrete allowed
+        angles, fit some bin's bounding box? Always True with a continuous rotation range."""
+        it = self.item_types[item_type_id]
+        if any(r.start_angle != r.end_angle for r in it.allowed_rotations):
+            return True
+        bins = [(x1 - x0, y1 - y0) for x0, y0, x1, y1 in (b.shape.bounds for b in self.bin_types)]
+        for r in it.allowed_rotations:
+            boxes = [rotate(scale(s.shape, -1, 1, origin=(0, 0)) if r.mirror else s.shape,
+                            r.start_angle, origin=(0, 0)).bounds for s in it.shapes]
+            w = max(b[2] for b in boxes) - min(b[0] for b in boxes)
+            h = max(b[3] for b in boxes) - min(b[1] for b in boxes)
+            if any(w - bw <= 1e-6 and h - bh <= 1e-6 for bw, bh in bins):  # rotate() float noise
+                return True
+        return False
+
     def __repr__(self) -> str:
         return (f"Instance(objective={self.objective.value!r}, "
                 f"bins={len(self.bin_types)}, items={len(self.item_types)})")
@@ -81,13 +99,13 @@ class InstanceBuilder:
     """
 
     def __init__(self, objective: Objective | str = Objective.BIN_PACKING):
-        self._objective = objective if isinstance(objective, Objective) else Objective(objective)
+        self._objective = Objective(objective)
         self._bins: list[BinType] = []
         self._items: list[ItemType] = []
         self._params = Parameters()
 
     def set_objective(self, objective: Objective | str) -> InstanceBuilder:
-        self._objective = objective if isinstance(objective, Objective) else Objective(objective)
+        self._objective = Objective(objective)
         return self
 
     def set_item_item_minimum_spacing(self, spacing: float) -> InstanceBuilder:
@@ -99,7 +117,7 @@ class InstanceBuilder:
         return self
 
     def set_leftover_mode(self, mode: LeftoverMode | str) -> InstanceBuilder:
-        self._params.leftover_mode = mode if isinstance(mode, LeftoverMode) else LeftoverMode(mode)
+        self._params.leftover_mode = LeftoverMode(mode)
         return self
 
     def add_bin(self, shape, *, cost: float = -1.0, copies: int = 1,
@@ -145,9 +163,11 @@ class InstanceBuilder:
 
         - `shape` may be a Polygon, list of Polygons / ItemShapes (multi-shape
           item), an `(w, h)` tuple, or a numeric radius.
-        - `copies_min` forces at least that many copies to be packed. Only
-          meaningful for KNAPSACK, where packing an item type is otherwise
-          optional; leave at -1 for the solver default.
+        - `copies_min` forces at least that many copies to be packed. KNAPSACK
+          only: every other objective rejects `copies_min != copies`. Leave at
+          -1 for the solver default.
+        - `copies=-1` (KNAPSACK only, finite bins) means unlimited: the solver
+          resolves it to as many copies as the total bin area allows.
         - `allowed_rotations` accepts:
             * None / []           -> single fixed angle 0, no mirror
             * list[float]         -> discrete angles
@@ -158,10 +178,9 @@ class InstanceBuilder:
           `mirror=True`.
         """
         if isinstance(shape, list) and shape and not _is_pair(shape[0]):
-            shapes = [s if isinstance(s, ItemShape) else ItemShape(shape=_coerce_shape(s))
-                      for s in shape]
+            shapes = [s if isinstance(s, ItemShape) else _item_shape(s) for s in shape]
         else:
-            shapes = [ItemShape(shape=_coerce_shape(shape))]
+            shapes = [_item_shape(shape)]
 
         rots = _normalize_rotations(allowed_rotations, allow_mirroring)
         self._items.append(ItemType(shapes=shapes, profit=profit,
@@ -177,13 +196,23 @@ class InstanceBuilder:
 
     def add_item_type_circle(self, radius: float, resolution: int = ARC_RESOLUTION,
                              **kw) -> int:
-        return self.add_item(circle_polygon(radius, resolution=resolution), **kw)
+        circle = ItemShape(shape=circle_polygon(radius, resolution=resolution),
+                           circle=(0.0, 0.0, float(radius)))
+        return self.add_item([circle], **kw)
 
     def build(self) -> Instance:
-        return Instance(self._objective, self._bins, self._items, self._params)
+        # Deep copy: later builder calls (add_defect, set_*) must not reach a built Instance.
+        return Instance(self._objective, *copy.deepcopy((self._bins, self._items)),
+                        copy.deepcopy(self._params))
 
 
 # MARK: shape coercion ────────────────────────────────────────────────────────
+
+
+def _item_shape(shape) -> ItemShape:
+    if isinstance(shape, (int, float)):  # a radius: a native circle, exact for the solver
+        return ItemShape(shape=circle_polygon(float(shape)), circle=(0.0, 0.0, float(shape)))
+    return ItemShape(shape=_coerce_shape(shape))
 
 
 def _coerce_shape(shape) -> ShapeLike:
@@ -259,7 +288,10 @@ def _params_from_dict(jp: dict) -> Parameters:
 
 
 def _bin_to_dict(b: BinType) -> dict[str, Any]:
-    out = shape_to_json(b.shape)
+    # The C++ reads a bin as a plain Shape and drops "holes": send each hole as a defect instead.
+    holes = [Defect(shape=Polygon(r), item_defect_minimum_spacing=b.item_bin_minimum_spacing)
+             for r in getattr(b.shape, "interiors", ())]
+    out = shape_to_json(Polygon(b.shape.exterior) if holes else b.shape)
     if b.cost != -1.0:
         out["cost"] = b.cost
     if b.copies != 1:
@@ -268,8 +300,8 @@ def _bin_to_dict(b: BinType) -> dict[str, Any]:
         out["copies_min"] = b.copies_min
     if b.item_bin_minimum_spacing:
         out["item_bin_minimum_spacing"] = b.item_bin_minimum_spacing
-    if b.defects:
-        out["defects"] = [_defect_to_dict(d) for d in b.defects]
+    if b.defects or holes:
+        out["defects"] = [_defect_to_dict(d) for d in b.defects + holes]
     if b.fixed_items:
         out["fixed_items"] = [_fixed_to_dict(f) for f in b.fixed_items]
     return out
@@ -327,10 +359,8 @@ def _defect_from_dict(jd: dict) -> Defect:
 
 
 def _item_to_dict(it: ItemType) -> dict[str, Any]:
-    if len(it.shapes) == 1:
-        out = shape_to_json(it.shapes[0].shape)
-    else:
-        out = {"shapes": [shape_to_json(s.shape) for s in it.shapes]}
+    parts = [j for s in it.shapes for j in _item_shape_to_json(s)]
+    out = parts[0] if len(parts) == 1 else {"shapes": parts}
     if it.profit != -1.0:
         out["profit"] = it.profit
     if it.copies != 1:
@@ -342,16 +372,23 @@ def _item_to_dict(it: ItemType) -> dict[str, Any]:
     return out
 
 
+def _item_shape_to_json(s: ItemShape) -> list[dict[str, Any]]:
+    if s.circle:
+        x, y, r = s.circle
+        return [{"type": "circle", "x": x, "y": y, "radius": r}]
+    # The JSON has no multipolygon: each part of a MultiPolygon becomes one shape of the item.
+    return [shape_to_json(g) for g in getattr(s.shape, "geoms", [s.shape])]
+
+
+def _item_shape_from_json(js: dict) -> ItemShape:
+    circle = (js.get("x", 0.0), js.get("y", 0.0), js["radius"]) if js.get("type") == "circle" else None
+    return ItemShape(shape=shape_from_json(js), circle=circle)
+
+
 def _item_from_dict(ji: dict) -> ItemType:
-    if "shapes" in ji:
-        shapes = [ItemShape(shape=shape_from_json(js)) for js in ji["shapes"]]
-    else:
-        shapes = [ItemShape(shape=shape_from_json(ji))]
-    rots = [_rot_from_dict(r) for r in ji.get("allowed_rotations", [])] \
-        or [AllowedRotation()]
-    if ji.get("allow_mirroring"):
-        rots = rots + [AllowedRotation(r.start_angle, r.end_angle, True)
-                       for r in rots if not r.mirror]
+    shapes = [_item_shape_from_json(js) for js in ji.get("shapes", [ji])]
+    rots = _normalize_rotations([_rot_from_dict(r) for r in ji.get("allowed_rotations", [])],
+                                bool(ji.get("allow_mirroring")))
     return ItemType(shapes=shapes, profit=ji.get("profit", -1.0),
                     copies=ji.get("copies", 1),
                     copies_min=ji.get("copies_min", -1),

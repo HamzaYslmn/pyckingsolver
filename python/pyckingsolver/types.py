@@ -16,19 +16,17 @@ ShapeLike = Polygon | MultiPolygon
 
 
 class Objective(str, enum.Enum):
-    """Packing objective. Values match the C++ kebab-case CLI strings."""
-    DEFAULT = "default"
+    """Packing objective. Values match the C++ kebab-case CLI strings.
+
+    Only the objectives irregular solves: OpenDimensionZ and the sequential 1D subproblem throw.
+    """
     KNAPSACK = "knapsack"
     BIN_PACKING = "bin-packing"
     BIN_PACKING_WITH_LEFTOVERS = "bin-packing-with-leftovers"
     OPEN_DIMENSION_X = "open-dimension-x"
     OPEN_DIMENSION_Y = "open-dimension-y"
-    OPEN_DIMENSION_Z = "open-dimension-z"
     OPEN_DIMENSION_XY = "open-dimension-xy"
     VARIABLE_SIZED_BIN_PACKING = "variable-sized-bin-packing"
-    SEQUENTIAL_ONEDIMENSIONAL_RECTANGLE_SUBPROBLEM = (
-        "sequential-onedimensional-rectangle-subproblem"
-    )
     FEASIBILITY = "feasibility"
 
     @classmethod
@@ -41,19 +39,15 @@ class Objective(str, enum.Enum):
 
 
 _OBJ_ALIASES = {
-    "Default": "default", "Knapsack": "knapsack", "KP": "knapsack",
+    "Knapsack": "knapsack", "KP": "knapsack",
     "BinPacking": "bin-packing", "BPP": "bin-packing",
     "BinPackingWithLeftovers": "bin-packing-with-leftovers",
     "BPPL": "bin-packing-with-leftovers",
     "OpenDimensionX": "open-dimension-x", "ODX": "open-dimension-x",
     "OpenDimensionY": "open-dimension-y", "ODY": "open-dimension-y",
-    "OpenDimensionZ": "open-dimension-z", "ODZ": "open-dimension-z",
     "OpenDimensionXY": "open-dimension-xy", "ODXY": "open-dimension-xy",
     "VariableSizedBinPacking": "variable-sized-bin-packing",
     "VBPP": "variable-sized-bin-packing", "VSBP": "variable-sized-bin-packing",
-    "SequentialOneDimensionalRectangleSubproblem":
-        "sequential-onedimensional-rectangle-subproblem",
-    "BDRS": "sequential-onedimensional-rectangle-subproblem",
     "Feasibility": "feasibility",
 }
 
@@ -135,6 +129,9 @@ class BinType:
 class ItemShape:
     """A single shape component of an item (items can be multi-shape)."""
     shape: ShapeLike = field(default_factory=Polygon)
+    # (x, y, radius): sent as a native circle, so the solver sees the exact disc; `shape` is
+    # its polygon for Python-side use.
+    circle: tuple[float, float, float] | None = None
 
 
 @dataclass
@@ -176,9 +173,4 @@ class SolutionBin:
     items: list[SolutionItem] = field(default_factory=list)
     shape: Polygon | None = None
     defects: list[Polygon | MultiPolygon] = field(default_factory=list)
-    item_area: float = 0.0
-    x_min: float = 0.0
-    x_max: float = 0.0
-    y_min: float = 0.0
-    y_max: float = 0.0
 # __PYCK_END__

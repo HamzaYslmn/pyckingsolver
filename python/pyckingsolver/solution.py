@@ -13,9 +13,22 @@ from pyckingsolver.geometry import elements_to_polygon
 from pyckingsolver.types import (
     BinType,
     FixedItem,
+    Objective,
     SolutionBin,
     SolutionItem,
 )
+
+
+def _metric(key: str) -> property:
+    return property(lambda self: self.metrics.get(key), doc=f'`metrics["{key}"]`, None when absent.')
+
+
+# objective -> (value key, bound key, maximized?)
+_BOUNDS = {
+    Objective.KNAPSACK: ("ItemProfit", "KnapsackBound", True),
+    Objective.BIN_PACKING: ("NumberOfBins", "BinPackingBound", False),
+    Objective.VARIABLE_SIZED_BIN_PACKING: ("BinCost", "VariableSizedBinPackingBound", False),
+}
 
 
 class Solution:
@@ -32,9 +45,31 @@ class Solution:
     """
 
     def __init__(self, bins: list[SolutionBin] | None = None,
-                 metrics: dict[str, Any] | None = None):
+                 metrics: dict[str, Any] | None = None, objective: Objective | None = None):
         self.bins = list(bins or [])
         self.metrics: dict[str, Any] = dict(metrics or {})
+        self.objective = objective  # set by Solver.solve()
+
+    number_of_items = _metric("NumberOfItems")
+    number_of_bins = _metric("NumberOfBins")
+    item_profit = _metric("ItemProfit")
+    item_area = _metric("ItemArea")
+    bin_cost = _metric("BinCost")
+    full_waste_percentage = _metric("FullWastePercentage")
+    leftover_value = _metric("LeftoverValue")
+    x_max = _metric("XMax")
+    y_max = _metric("YMax")
+    time = _metric("Time")
+
+    @property
+    def is_proven_optimal(self) -> bool:
+        """The value meets the solver's bound. False when unknown (no bound for this objective,
+        or no metrics, e.g. a provisional layout)."""
+        value_key, bound_key, maximized = _BOUNDS.get(self.objective, (None, None, False))
+        value, bound = self.metrics.get(value_key), self.metrics.get(bound_key)
+        if value is None or bound is None:
+            return False
+        return value >= bound - 1e-9 if maximized else value <= bound + 1e-9
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Solution:
@@ -42,13 +77,7 @@ class Solution:
         for jb in data.get("bins") or []:
             if jb is None:
                 continue
-            sb = SolutionBin(
-                bin_type_id=jb.get("id", 0),
-                copies=jb.get("copies", 1),
-                item_area=jb.get("item_area", 0.0),
-                x_min=jb.get("x_min", 0.0), x_max=jb.get("x_max", 0.0),
-                y_min=jb.get("y_min", 0.0), y_max=jb.get("y_max", 0.0),
-            )
+            sb = SolutionBin(bin_type_id=jb.get("id", 0), copies=jb.get("copies", 1))
             if "shape" in jb:
                 sb.shape = elements_to_polygon(jb["shape"])
             for jd in jb.get("defects", []):
@@ -148,10 +177,9 @@ def _matches(it: SolutionItem, fi: FixedItem, tol: float) -> bool:
 
 
 def _bin_to_dict(sb: SolutionBin) -> dict[str, Any]:
-    out: dict[str, Any] = {"id": sb.bin_type_id, "copies": sb.copies}
-    if sb.items:
-        out["items"] = [_item_to_dict(it) for it in sb.items]
-    return out
+    # Always "items": SolutionBuilder::read indexes it without checking.
+    return {"id": sb.bin_type_id, "copies": sb.copies,
+            "items": [_item_to_dict(it) for it in sb.items]}
 
 
 def _item_to_dict(it: SolutionItem) -> dict[str, Any]:

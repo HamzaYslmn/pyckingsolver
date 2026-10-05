@@ -20,13 +20,13 @@ from pyckingsolver.solver import _run_solver
 _SLEEP = [sys.executable, "-c", "import time; time.sleep(30)"]
 
 
-def _writer(path: Path, writes: int, gap: float) -> list[str]:
-    """Child that writes `path` `writes` times `gap` apart, then hangs — a stalling solve."""
+def _writer(path: Path, texts: list[str], gap: float) -> list[str]:
+    """Child that writes each of `texts` to `path`, `gap` apart, then hangs: a stalling solve."""
     return [sys.executable, "-c",
             f"import time,pathlib\n"
             f"p=pathlib.Path(r'{path}')\n"
-            f"for i in range({writes}):\n"
-            f"    p.write_text(str(i))\n"
+            f"for t in {texts!r}:\n"
+            f"    p.write_text(t)\n"
             f"    time.sleep({gap})\n"
             f"time.sleep(30)"]
 
@@ -39,9 +39,9 @@ for text in (sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]):
 
 
 def _certificate(items: int) -> str:
-    """A minimal certificate the wrapper can parse, with `items` placements."""
+    """A minimal certificate in the binary's layout (indent 4, trailing newline), `items` placements."""
     return json.dumps({"bins": [{"id": 0, "copies": 1, "items": [
-        {"id": 0, "x": i, "y": 0, "angle": 0, "mirror": False} for i in range(items)]}]})
+        {"id": 0, "x": i, "y": 0, "angle": 0, "mirror": False} for i in range(items)]}]}, indent=4) + "\n"
 
 
 def test_torn_certificates_are_retried_and_improvements_delivered():
@@ -52,7 +52,7 @@ def test_torn_certificates_are_retried_and_improvements_delivered():
         seen = []
         child = [sys.executable, "-c", _PARTIAL_WRITER, str(path),
                  torn, _certificate(1), torn, _certificate(2)]
-        result, stalled = _run_solver(child, timeout=20, cwd=tmp, cancel=None,
+        result, stalled, _ = _run_solver(child, timeout=20, cwd=tmp, cancel=None,
                                       sol_path=path, on_improvement=seen.append)
 
     assert result.returncode == 0 and stalled is False
@@ -68,7 +68,7 @@ def test_first_solution_timeout_kills_wedged_solve():
     with tempfile.TemporaryDirectory() as tmp:
         missing = Path(tmp) / "solution.json"
         t0 = time.monotonic()
-        result, stalled = _run_solver(_SLEEP, timeout=60, cwd=tmp, cancel=None,
+        result, stalled, _ = _run_solver(_SLEEP, timeout=60, cwd=tmp, cancel=None,
                                       sol_path=missing, stall=None, first=1.0)
         elapsed = time.monotonic() - t0
 
@@ -83,23 +83,61 @@ def test_stall_timeout_kills_converged_solve_intact():
     with tempfile.TemporaryDirectory() as tmp:
         sol = Path(tmp) / "solution.json"
         t0 = time.monotonic()
-        result, stalled = _run_solver(_writer(sol, writes=3, gap=0.3), timeout=60,
+        certs = [_certificate(i + 1) for i in range(3)]
+        result, stalled, last = _run_solver(_writer(sol, certs, gap=0.3), timeout=60,
                                       cwd=tmp, cancel=None, sol_path=sol,
                                       stall=1.5, first=None)
         elapsed = time.monotonic() - t0
-        content = sol.read_text()
+
 
     assert stalled is True, "converged solve should report stalled"
     assert result.returncode == 0
-    assert content == "2", f"last certificate lost or torn: {content!r}"
+    assert last == certs[-1], f"last certificate lost or torn: {last!r}"
     assert 1.5 <= elapsed < 6, f"killed at the wrong time: {elapsed:.1f}s"
     print(f"   converged solve killed at {elapsed:.1f}s, certificate intact")
+
+
+def test_null_and_bound_rewrites_are_not_progress():
+    """The binary writes `null` at t~0 and rewrites the same layout on bound updates: neither
+    may satisfy first_solution_timeout or reset the stall clock."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sol = Path(tmp) / "solution.json"
+        t0 = time.monotonic()
+        _, stalled, _ = _run_solver(_writer(sol, ["null"], gap=0.1), timeout=60, cwd=tmp,
+                                 cancel=None, sol_path=sol, stall=10, first=1.0)
+        first_kill = time.monotonic() - t0
+        same = [_certificate(1)] * 8  # one layout rewritten every 0.3s
+        t0 = time.monotonic()
+        _, stalled2, _ = _run_solver(_writer(sol, same, gap=0.3), timeout=60, cwd=tmp,
+                                  cancel=None, sol_path=sol, stall=1.0, first=None)
+        stall_kill = time.monotonic() - t0
+
+    assert stalled and first_kill < 3, f"null certificate counted as a solution ({first_kill:.1f}s)"
+    assert stalled2 and stall_kill < 2.5, f"bound rewrites reset the stall clock ({stall_kill:.1f}s)"
+    print(f"   null ignored (killed at {first_kill:.1f}s), rewrites of one layout stalled at {stall_kill:.1f}s")
+
+
+def test_kill_mid_rewrite_keeps_the_last_complete_certificate():
+    """Bound updates keep rewriting the file after the last new layout, so a stall kill can land
+    mid-rewrite. The torn file (here cut right after a nested "}") must not replace the last
+    complete certificate the watchdog read."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sol = Path(tmp) / "solution.json"
+        cert = _certificate(2)
+        torn = cert[:cert.index("}") + 1]
+        _, stalled, last = _run_solver(_writer(sol, [cert, torn], gap=0.3), timeout=60, cwd=tmp,
+                                       cancel=None, sol_path=sol, stall=1.0, first=None)
+        on_disk = sol.read_text()
+
+    assert stalled and on_disk == torn
+    assert last == cert, f"torn rewrite leaked into the result: {last!r}"
+    print("   kill mid-rewrite: last complete certificate kept, torn file ignored")
 
 
 def test_natural_exit_is_not_stalled():
     """A child that finishes on its own is never flagged as a kill."""
     with tempfile.TemporaryDirectory() as tmp:
-        result, stalled = _run_solver([sys.executable, "-c", "print('done')"],
+        result, stalled, _ = _run_solver([sys.executable, "-c", "print('done')"],
                                       timeout=60, cwd=tmp, cancel=None,
                                       sol_path=Path(tmp) / "solution.json",
                                       stall=1.0, first=1.0)
@@ -116,7 +154,7 @@ def test_no_certificate_returns_none():
     import pyckingsolver.solver as solver_mod
     original = solver_mod._run_solver
     solver_mod._run_solver = lambda *a, **k: (
-        subprocess.CompletedProcess([], 0, "", ""), True)
+        subprocess.CompletedProcess([], 0, "", ""), True, None)
     try:
         assert Solver().solve(_instance(4), params=SolverParams(time_limit=1)) is None
     finally:
@@ -162,6 +200,8 @@ def main():
     test_torn_certificates_are_retried_and_improvements_delivered()
     test_first_solution_timeout_kills_wedged_solve()
     test_stall_timeout_kills_converged_solve_intact()
+    test_null_and_bound_rewrites_are_not_progress()
+    test_kill_mid_rewrite_keeps_the_last_complete_certificate()
     test_natural_exit_is_not_stalled()
     test_no_certificate_returns_none()
     test_real_solve_stops_early_without_losing_items()

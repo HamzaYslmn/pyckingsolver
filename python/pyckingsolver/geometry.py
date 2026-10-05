@@ -1,10 +1,9 @@
 """Shapely <-> packingsolver JSON shape conversions.
 
-Every shape is carried as a Shapely `Polygon` (holes as interior rings). Circles and
-rectangles are discretized to polygons rather than emitted as native ``type:"circle"`` /
-``type:"rectangle"``: the bundled binary crashes on a native circle, and feeding a native
-rectangle makes its heuristic non-deterministic (the polygon form is geometrically
-identical and gives stable, reproducible packings).
+Every shape is carried as a Shapely `Polygon` (holes as interior rings). Rectangles go out
+as polygons, not native ``type:"rectangle"``: a native rectangle makes the heuristic
+non-deterministic, and the polygon form is geometrically identical. An item given as a radius
+is the exception: `ItemShape.circle` sends it as a native circle (see instance.py).
 """
 
 from __future__ import annotations
@@ -124,7 +123,7 @@ def shape_to_json(geom: Polygon) -> dict[str, Any]:
 
 
 def _ring_vertices(coords) -> list[dict[str, float]]:
-    pts = list(coords)
+    pts = [c[:2] for c in coords]  # drops a DXF Z
     if pts and pts[0] == pts[-1]:
         pts = pts[:-1]
     if _signed_area(pts) < 0:
