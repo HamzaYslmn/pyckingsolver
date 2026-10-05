@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `1f352c404`, 2026-10-05).
-Python wrapper version: `0.9.0` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `816b70771`, 2026-10-05).
+Python wrapper version: `0.9.1` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -100,6 +100,21 @@ the periodic-packing thresholds. Wrap them only once `instance_builder.cpp::read
   shipped or wrapped. `Objective.BIN_PACKING_CUTTING_COST` belongs to `rectangleguillotine`;
   irregular accepts the string and exits 0 with `bins: null`, so it is deliberately absent
   from the wrapper's `Objective`.
+
+---
+
+## MARK: Recent Upstream Changes (2026-10-05 → 2026-10-05)
+
+Pulled `27a0b1778` → `816b70771` (5 commits, four of them the web page). 0.9.0 shipped `27a0b1778`,
+not the `1f352c404` its notes name; the two commits between (`9a43ee1dd` rectangleguillotine,
+`27a0b1778` onedimensional/rectangle reductions) do not touch irregular. Bundled binary rebuilt + re-bundled.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `816b70771` | Irregular: remap a sub-instance's fixed items before checking them | Not the fix the wrapper needs. `Reduction::merge_identical_items` gives a merged-away item type no `orig_to_sub` id, so a fixed item on it still throws "fixed item type id not found in sub-instance mapping". Re-checked 3/3 on both reproducers (the `test_nesting.py` pinned-duplicates case with `reduce=True`, item 1; a 95-type KNAPSACK dump, item 19). The `reduce=None` workaround in `Solver.solve` stays. |
+| `02eefe2b3`, `2e2741234`, `efd9b451e`, `b848c4f88` | Web page: irregular form details, fixed items, general shapes, custom rotations | Inert for the wrapper. |
+
+**Wrapper impact**: none. No CLI flag, instance key or output change.
 
 ---
 

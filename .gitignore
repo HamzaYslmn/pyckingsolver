@@ -1,4 +1,5 @@
 build/
+build-ci/
 build_noclp/
 .vscode
 .github/copilot-instructions.md

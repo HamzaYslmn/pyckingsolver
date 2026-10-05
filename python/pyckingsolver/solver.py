@@ -319,11 +319,14 @@ _TRUE_ONLY_FLAGS = ("anchor", "group_identical_bins")  # sent as "1" only when T
 # MARK: helpers ──────────────────────────────────────────────────────────────
 
 
+_POLL = 0.05  # seconds; a kill lands at most this late. Each poll is one stat() unless the file changed.
+
+
 def _run_solver(cmd: list[str], timeout: float, cwd: str, cancel: Any,
                 sol_path: Path | None = None, stall: float | None = None,
                 first: float | None = None,
                 on_improvement: Callable[[Solution], None] | None = None):
-    """One poll loop (0.25s): natural exit, cancel kill, adaptive stall kill, deadline kill.
+    """One poll loop (`_POLL`): natural exit, cancel kill, adaptive stall kill, deadline kill.
 
     Returns (CompletedProcess, stalled, last). `stalled=True` = killed on purpose because no
     new layout came for `stall` secs, or none at all for `first` secs. `last` is the text of
@@ -341,7 +344,7 @@ def _run_solver(cmd: list[str], timeout: float, cwd: str, cancel: Any,
     try:
         while True:
             try:
-                out, err = proc.communicate(timeout=0.25)
+                out, err = proc.communicate(timeout=_POLL)
                 return subprocess.CompletedProcess(cmd, proc.returncode, out, err), False, seen
             except subprocess.TimeoutExpired:
                 pass
@@ -360,7 +363,11 @@ def _run_solver(cmd: list[str], timeout: float, cwd: str, cancel: Any,
                     text, provisional = cert
                     # Bound updates rewrite the same layout: only a new one counts as progress.
                     if text != seen:
-                        seen, last_change = text, now
+                        # Date the layout by its write, not by this poll. Timeouts stay monotonic:
+                        # the wall clock only measures the write's age, clamped so a clock jump
+                        # moves one estimate by at most a second.
+                        age = min(max(time.time_ns() - st.st_mtime_ns, 0), 1_000_000_000) / 1e9
+                        seen, last_change = text, now - age
                         if provisional is not None:
                             on_improvement(provisional)
                 limit = stall if seen else first

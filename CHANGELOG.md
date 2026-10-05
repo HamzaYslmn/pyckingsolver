@@ -2,6 +2,62 @@
 
 Older release notes, moved out of the README. The current release's notes stay there.
 
+## 0.9.0
+
+- **C++ pin moves to packingsolver `27a0b1778` (master, 2026-10-05).** The notes were reviewed
+  against `1f352c404`; the two commits after it touch only rectangleguillotine and the
+  onedimensional/rectangle reductions.
+- **Breaking: `Objective.DEFAULT` is gone.** Upstream removed the `default` objective, which no
+  algorithm selection handled. Pick a real objective.
+- **`copies_min` is KNAPSACK only.** Every other objective now rejects `copies_min != copies` at build
+  time instead of accepting an instance its bounds already called infeasible.
+- **Unlimited copies:** `add_item(copies=-1)` under KNAPSACK resolves to as many copies as the bins'
+  total area allows.
+- **New `SolverParams.not_anytime_local_search_maximum_number_of_iterations_without_improvement`**
+  caps the local search shrinkage loop outside Anytime mode. Local search also no longer drops an
+  item inside a full bin.
+- Infeasibility is proven upfront (an item that fits no bin, the 1D relaxation).
+- **Breaking: `Objective.OPEN_DIMENSION_Z` and `SEQUENTIAL_ONEDIMENSIONAL_RECTANGLE_SUBPROBLEM`
+  are gone** (irregular throws on both), and so is `SolverParams.log_to_stderr` (the binary
+  never reads its flag). `SolutionBin.item_area`/`x_min`/`x_max`/`y_min`/`y_max` are gone too:
+  the certificate never carries them, so they were always 0. Use `metrics["XMax"]` and friends.
+
+- **`SolverInfeasible`** (a `RuntimeError`) when the solver proves no layout exists, with
+  `item_type_ids` naming the item types that fit no bin. `solve()` still returns `None` for
+  "nothing found in time", so the two are now distinguishable.
+- **Typed stats on `Solution`:** `number_of_items`, `number_of_bins`, `item_profit`,
+  `item_area`, `bin_cost`, `full_waste_percentage`, `leftover_value`, `x_max`, `y_max`, `time`,
+  and `is_proven_optimal` (KNAPSACK, BIN_PACKING, VARIABLE_SIZED_BIN_PACKING).
+- **`Instance.fits_some_bin(item_type_id)`**, upstream's bounding-box check, to name a part that
+  fits no sheet before solving.
+- **Native circles:** an item given as a radius (`add_item(10.0)`, `add_item_type_circle`) goes
+  to the solver as an exact circle instead of an inscribed 64-gon, which was about 0.12% of the
+  radius too small. Arbitrary arcs in polygons are still discretized.
+
+**Fixes**
+
+- `solve()` returns `None` when no layout exists (proven infeasible, nothing in time), as
+  documented, instead of an empty `Solution`.
+- `stall_timeout` / `first_solution_timeout` count only a new layout: the binary writes `null`
+  at start and rewrites the same layout on bound updates, which satisfied
+  `first_solution_timeout` at once and kept resetting the stall clock.
+- Fixed items no longer crash the solve: upstream's instance reduction (on by default) merges
+  identical pinned item types and then throws "fixed item type id not found in sub-instance
+  mapping". `SolverParams.reduce=None` now means off when a bin has fixed items.
+- A stall-killed run's `metrics` are its last progress entry, not the raw output file, and
+  its layout is the last complete certificate the watchdog read: the binary keeps rewriting
+  the file on bound updates, so the kill can land mid-rewrite.
+- Mid-solve certificates are read only when something watches them (`stall_timeout`,
+  `first_solution_timeout`, `on_improvement`), and the stall watchdog compares text instead of
+  parsing: on a 20 MB certificate that cut the polling cost from 657 ms to 223 ms per solve.
+- Bin holes are honored (sent as defects; the solver drops a bin's holes).
+- `SolverParams.item_bin_minimum_spacing` works: the binary ignores its CLI flag, so the wrapper
+  writes it into each bin.
+- `time_limit` keeps fractions (0.5 used to become 0); a relative instance or log path resolves
+  against your cwd; a MultiPolygon item becomes one item of several shapes; 3D coordinates are
+  accepted; `build()` snapshots the builder; an interrupted solve no longer leaves the binary
+  running; rejected inputs (`Error: ...`) no longer write crash dumps.
+
 ## 0.8.3
 
 - **C++ pin moves to packingsolver `bf273e9bf` (master, 2026-09-27)**, a sync release with no wrapper
