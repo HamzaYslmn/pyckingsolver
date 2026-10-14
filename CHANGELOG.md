@@ -2,6 +2,17 @@
 
 Older release notes, moved out of the README. The current release's notes stay there.
 
+## 0.9.1
+
+- **C++ pin moves to packingsolver `816b70771` (master, 2026-10-05).** Irregular's only change
+  there remaps a sub-instance's fixed items before checking them. It does not fix the fixed-item
+  reduction crash: an item type merged into an identical one still has no sub-instance id, so a
+  pinned duplicate still throws "fixed item type id not found in sub-instance mapping". The
+  0.9.0 workaround stays: `SolverParams.reduce=None` means off when a bin has fixed items.
+- **Faster stall kills.** The watchdog dates a new layout by the certificate's write instead of
+  the poll that noticed it, and polls every 0.05 s instead of 0.25 s, so a stall-killed solve
+  stops about 0.2 s sooner. Its timeouts still run on the monotonic clock.
+
 ## 0.9.0
 
 - **C++ pin moves to packingsolver `27a0b1778` (master, 2026-10-05).** The notes were reviewed

@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `816b70771`, 2026-10-05).
-Python wrapper version: `0.9.1` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `79b67f8f9`, 2026-10-12).
+Python wrapper version: `0.9.2` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -100,6 +100,23 @@ the periodic-packing thresholds. Wrap them only once `instance_builder.cpp::read
   shipped or wrapped. `Objective.BIN_PACKING_CUTTING_COST` belongs to `rectangleguillotine`;
   irregular accepts the string and exits 0 with `bins: null`, so it is deliberately absent
   from the wrapper's `Objective`.
+
+---
+
+## MARK: Recent Upstream Changes (2026-10-05 → 2026-10-12)
+
+Pulled `816b70771` → `79b67f8f9` (two syncs: `09fda1058`, then 56 more commits, nearly all docs, the
+web viewer and the other problem types). No irregular CLI, instance key, header or output change.
+Bundled binary rebuilt + re-bundled.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `bc08f02e` (shape `1ff57b5`) | Convex hull keeps a point barely above the pivot on its left | Hull feeds tree search, rotations and large item first; found on an approximated arc, the wrapper's shape for every arc. Layouts can move. |
+| `0216c95e` | `build()` recomputes the arc centers of scaled item, bin and defect shapes | Inert for the wrapper: arcs in polygons are discretized, and full circles (start == end) are skipped. Would matter if the wrapper ever sent DXF arcs natively. |
+| `82522ad6` (shape `0440920`) | Mirroring an arc no longer turns it into its complement | Inert for the same reason. |
+| `4e4dcf3f` | `NotAnytimeDeterministic` sub-algorithms stop once their own solution is proven optimal | Faster not-anytime-deterministic runs; the result stays deterministic. `Anytime` unchanged. |
+
+**Wrapper impact**: none. No CLI flag, instance key or output change.
 
 ---
 
