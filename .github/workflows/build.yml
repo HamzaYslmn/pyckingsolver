@@ -30,10 +30,10 @@ jobs:
           - { os: macos-14,        tag: macosx_11_0_arm64,        bin: packingsolver_irregular     }
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with: { submodules: recursive }
 
-    - uses: astral-sh/setup-uv@v5
+    - uses: astral-sh/setup-uv@v10.3.0
 
     # System deps (LAPACK/BZ2 for Linux; Ninja everywhere)
     - name: Install Ninja + system deps (Linux)
@@ -46,7 +46,7 @@ jobs:
 
     - name: Install Ninja (Windows)
       if: runner.os == 'Windows'
-      uses: seanmiddleditch/gha-setup-ninja@v5
+      uses: seanmiddleditch/gha-setup-ninja@v6
 
     # Make MSVC visible to Ninja on Windows
     - name: Set up MSVC (Windows)
@@ -55,7 +55,7 @@ jobs:
 
     # Cache the C++ build (keyed on solver sources) for fast incremental CI
     - name: Cache CMake build
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: extern/packingsolver/build
         key: pkgsolver-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('extern/packingsolver/**/CMakeLists.txt', 'extern/packingsolver/**/*.cpp', 'extern/packingsolver/**/*.hpp') }}
@@ -87,7 +87,7 @@ jobs:
         whl=$(ls dist/*.whl)
         uvx wheel tags --remove --platform-tag ${{ matrix.tag }} "$whl"
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: wheel-${{ matrix.os }}-${{ runner.arch }}
         path: dist/*.whl
@@ -100,7 +100,7 @@ jobs:
     environment: pypi
     permissions: { id-token: write }
     steps:
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with: { path: dist, merge-multiple: true }
 
     - uses: pypa/gh-action-pypi-publish@release/v1

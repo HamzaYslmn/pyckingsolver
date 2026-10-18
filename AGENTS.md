@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `a5ddea695`, 2026-10-17).
-Python wrapper version: `0.9.3` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `0b2b69ef3`, 2026-10-18).
+Python wrapper version: `0.9.4` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -100,6 +100,21 @@ the periodic-packing thresholds. Wrap them only once `instance_builder.cpp::read
   shipped or wrapped. `Objective.BIN_PACKING_CUTTING_COST` belongs to `rectangleguillotine`;
   irregular accepts the string and exits 0 with `bins: null`, so it is deliberately absent
   from the wrapper's `Objective`.
+
+---
+
+## MARK: Recent Upstream Changes (2026-10-17 → 2026-10-18)
+
+Pulled `a5ddea695` → `0b2b69ef3` (3 commits). No irregular CLI, instance key or output change.
+Bundled binary rebuilt + re-bundled.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `0b2b69ef` (#721, fixes #720) | **Fixed items in `tree_search_periodic_packing`**: each fixed item is cut out of the root's free space as its AABB inflated by the item-item spacing, consumes a copy of its type, and is written to the solution | Auto-selection picks periodic packing for a single bin once >16-copy types cover 80% of the bin or of the item area, with or without fixed items. Before, pins vanished from the certificate and items landed on them (#720 instance: 3707 mm2 on the pin). Now kept with no overlap, spacing 3 held. AABB approximation: `use_tree_search=True` can still pack tighter around big irregular pins. |
+| `2e2448f8` (shape `0944ac20` → `9e216ba5`, 9 commits) | `GeneralizedTrapezoid::extend_left` updates widths and area; `Shape::check` rejects disconnected consecutive elements; `Circle` basic shape; docs | Trapezoids are irregular's own path, so layouts can move. The check could reject a malformed input shape that passed before. `Circle` is unused (the wrapper discretizes arcs). |
+| `4efc8281` | Power-of-two helpers return exact powers | `scale_value` uses `smallest_power_of_two_greater_or_equal(value_max)`, wrong only below 1; bins are larger. None. |
+
+**Wrapper impact**: none. No CLI flag, instance key or output change.
 
 ---
 

@@ -75,8 +75,9 @@ def _render_png(sol: Solution, inst: Instance, colors: list[str], path: Path):
     for item in sol.bins[0].items:
         c = colors[item.item_type_id % len(colors)]
         for poly in item.shapes:
+            # Width is in mm: half sits outside the shape, so a wide stroke hides the item spacing.
             elems.append(f'<path d="{_poly_d(poly)}" fill="{c}70" stroke="{c}" '
-                         f'stroke-width="1.5" fill-rule="evenodd"/>')
+                         f'stroke-width="0.3" fill-rule="evenodd"/>')
 
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {vw:.1f} {vh:.1f}" '
            f'width="{int(vw * 4)}" height="{int(vh * 4)}">{"".join(elems)}</svg>')
