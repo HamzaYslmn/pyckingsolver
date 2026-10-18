@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `79b67f8f9`, 2026-10-12).
-Python wrapper version: `0.9.2` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `a5ddea695`, 2026-10-17).
+Python wrapper version: `0.9.3` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -100,6 +100,22 @@ the periodic-packing thresholds. Wrap them only once `instance_builder.cpp::read
   shipped or wrapped. `Objective.BIN_PACKING_CUTTING_COST` belongs to `rectangleguillotine`;
   irregular accepts the string and exits 0 with `bins: null`, so it is deliberately absent
   from the wrapper's `Objective`.
+
+---
+
+## MARK: Recent Upstream Changes (2026-10-12 → 2026-10-17)
+
+Pulled `79b67f8f9` → `a5ddea695` (5 commits; three touch only box, boxstacks, rectangle and
+rectangleguillotine, one adds an AI bug-report note to the headers). No irregular CLI, instance key
+or output change. Bundled binary rebuilt + re-bundled.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `a5ddea69` (shape `04409204` → `0944ac20`, 57 commits) | **Shape robustness**: boolean operations with full circles and opposite identical elements, inflation of shapes with circular holes, trapezoidation of shapes split by touching holes, exact angle sorts in `convex_hull` and `no_fit_polygon`, simplify within its tolerance, full circles approximated by at least 4 segments | All on irregular's own paths: spacing inflation, NFPs, trapezoids, hull. Layouts can move. Checked on this build: the wrapper tests and a 6-file CAD corpus nest with no crash and no overlap. |
+| `bc6c1856` | Header comment pointing AI agents to the upstream bug-report notes | None. |
+| `649fd652`, `3be7e789`, `8110c847` | Reductions (redundant rotations, lifted item dimensions) and tree search guide / open dimension bounds fixes | Not irregular. |
+
+**Wrapper impact**: none. No CLI flag, instance key or output change.
 
 ---
 

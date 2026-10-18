@@ -29,20 +29,18 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
-## What's New in 0.9.2
+## What's New in 0.9.3
 
-- **C++ pin moves to packingsolver `79b67f8f9` (master, 2026-10-12).** No API change: the
+- **C++ pin moves to packingsolver `a5ddea695` (master, 2026-10-17).** No API change: the
   irregular CLI, instance JSON and certificate are untouched, so no wrapper code moves.
-- **Convex hull fix** (shape `1ff57b5`): a point barely above the hull pivot, on its left, made the
-  angle sort inconsistent and, depending on `std::sort`, was dropped, leaving a hull smaller than
-  the shape. Found on an approximated circular arc, which is what the wrapper sends for every arc.
-  The irregular solver uses the hull in tree search, rotations and large item first, so layouts
-  can differ from 0.9.1.
-- **Arc centers recomputed** from their endpoints on scaled item, bin and defect shapes, so DXF
-  arcs whose endpoints sit ~2e-6 off their circle no longer fail with "invalid shape". Full
-  circles and line segments are untouched; the wrapper still discretizes arcs in polygons.
-- **Mirrored arcs keep their orientation** (shape `0440920`): mirroring an arc no longer turns it
-  into its complement.
+- **Shape robustness update** (shape `04409204` -> `0944ac20`, 57 commits), all in geometry the
+  irregular solver runs on every instance: boolean operations with full circles and with identical
+  elements going opposite ways, inflation of shapes with circular holes (what
+  `item_item_minimum_spacing` builds), trapezoidation of shapes split by touching holes, exact
+  angle comparisons in convex hulls and no-fit polygons, and simplification kept within its
+  tolerance. Layouts can differ from 0.9.2.
+- The other upstream commits (reductions and tree search guides for box, boxstacks, rectangle and
+  rectangleguillotine) do not touch irregular.
 
 Older release notes: [CHANGELOG.md](CHANGELOG.md).
 

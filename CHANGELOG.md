@@ -2,6 +2,21 @@
 
 Older release notes, moved out of the README. The current release's notes stay there.
 
+## 0.9.2
+
+- **C++ pin moves to packingsolver `79b67f8f9` (master, 2026-10-12).** No API change: the
+  irregular CLI, instance JSON and certificate are untouched, so no wrapper code moves.
+- **Convex hull fix** (shape `1ff57b5`): a point barely above the hull pivot, on its left, made the
+  angle sort inconsistent and, depending on `std::sort`, was dropped, leaving a hull smaller than
+  the shape. Found on an approximated circular arc, which is what the wrapper sends for every arc.
+  The irregular solver uses the hull in tree search, rotations and large item first, so layouts
+  can differ from 0.9.1.
+- **Arc centers recomputed** from their endpoints on scaled item, bin and defect shapes, so DXF
+  arcs whose endpoints sit ~2e-6 off their circle no longer fail with "invalid shape". Full
+  circles and line segments are untouched; the wrapper still discretizes arcs in polygons.
+- **Mirrored arcs keep their orientation** (shape `0440920`): mirroring an arc no longer turns it
+  into its complement.
+
 ## 0.9.1
 
 - **C++ pin moves to packingsolver `816b70771` (master, 2026-10-05).** Irregular's only change
