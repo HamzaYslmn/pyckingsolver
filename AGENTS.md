@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `0b2b69ef3`, 2026-10-18).
-Python wrapper version: `0.9.4` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `be6c31921`, 2026-10-20).
+Python wrapper version: `0.9.5` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -100,6 +100,20 @@ the periodic-packing thresholds. Wrap them only once `instance_builder.cpp::read
   shipped or wrapped. `Objective.BIN_PACKING_CUTTING_COST` belongs to `rectangleguillotine`;
   irregular accepts the string and exits 0 with `bins: null`, so it is deliberately absent
   from the wrapper's `Objective`.
+
+---
+
+## MARK: Recent Upstream Changes (2026-10-18 → 2026-10-20)
+
+Pulled `0b2b69ef3` → `be6c31921` (2 commits). No irregular CLI, instance key or output change.
+Bundled binary rebuilt + re-bundled.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `be6c3192` (#726, follow-up to #720) | **Periodic packing obstacles as rectangle sets**: fixed items, defects and bin borders are covered by `outer_approximation_by_rectangles` (shape `a4efbe93`) instead of their AABB, capped by the simplification waste budget; one item spacing no longer lost in front of each obstacle | A holed pin's hole is free space again: frame + 200 rectangles 0 -> 77 by default (63 at spacing 3), equal to tree search. Irregular items still pack tighter with `use_tree_search=True` (L shapes 66 vs 76), since periodic packing only places grids. |
+| `2773ddab` | Power-of-two helpers return 1 for values <= 0 | Bins are larger than 1. None. |
+
+**Wrapper impact**: none. No CLI flag, instance key or output change.
 
 ---
 

@@ -29,23 +29,22 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
-## What's New in 0.9.4
+## What's New in 0.9.5
 
-- **C++ pin moves to packingsolver `0b2b69ef3` (master, 2026-10-18).** No API change: the
+- **C++ pin moves to packingsolver `be6c31921` (master, 2026-10-20).** No API change: the
   irregular CLI, instance JSON and certificate are untouched, so no wrapper code moves.
-- **Fixed items are honoured by periodic packing** (fontanf/packingsolver#720, fixed by #721).
-  Auto-selection runs `tree_search_periodic_packing` on a single bin once item types with more
-  than 16 copies cover 80% of the bin or of the item area, and that algorithm ignored fixed items:
-  they were missing from the solution and other items were placed on them. It now cuts each fixed
-  item out of the free space as its bounding box inflated by the item-item spacing, counts it
-  against its type's copies and returns it in the solution. On the #720 instance (one pinned
-  pentagon, 30 copies of a small one) 0.9.3 dropped the pin and overlapped it by 3707 mm2 (3002
-  with spacing 3); 0.9.4 keeps it with no overlap and the spacing held. The bounding box is
-  coarse around large or irregular pins, so `use_tree_search=True` can still pack tighter there.
-- **Shape update** (shape `0944ac20` -> `9e216ba5`, 9 commits): `GeneralizedTrapezoid::extend_left`
-  now updates the trapezoid's widths and area, and `Shape::check` rejects shapes whose consecutive
-  elements are not connected. A `Circle` basic shape and the power-of-two helper fix do not reach
-  the wrapper's instances (arcs are discretized; bins are larger than 1).
+- **Periodic packing sees obstacles as rectangle sets, not bounding boxes**
+  (fontanf/packingsolver#726, follow-up to #720). Fixed items, defects and bin borders are covered
+  by a few rectangles (shape's new `outer_approximation_by_rectangles`), so a fixed frame's hole
+  stays free. A 400 x 300 frame with a 320 x 220 hole and 200 copies of a 30 x 28 rectangle:
+  0.9.4 placed 0 in the hole by default, 0.9.5 places 77 (63 at spacing 3), the same as
+  `use_tree_search=True`. Periodic packing also no longer loses one item spacing in front of each
+  obstacle, so a grid that fits exactly next to a fixed item or defect is accepted.
+- Periodic packing still places only rectangular grids, so with irregular items
+  `use_tree_search=True` can place more: 200 L shapes beside a solid 400 x 300 fixed item, 66 by
+  default vs 76 with tree search.
+- **Shape update** (shape `9e216ba5` -> `a4efbe93`): adds `outer_approximation_by_rectangles`.
+  The power-of-two helpers return 1 for values <= 0 (bins are larger than 1, so no wrapper effect).
 
 Older release notes: [CHANGELOG.md](CHANGELOG.md).
 
