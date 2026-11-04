@@ -29,22 +29,28 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
-## What's New in 0.9.5
+## What's New in 0.10.0
 
-- **C++ pin moves to packingsolver `be6c31921` (master, 2026-10-20).** No API change: the
-  irregular CLI, instance JSON and certificate are untouched, so no wrapper code moves.
-- **Periodic packing sees obstacles as rectangle sets, not bounding boxes**
-  (fontanf/packingsolver#726, follow-up to #720). Fixed items, defects and bin borders are covered
-  by a few rectangles (shape's new `outer_approximation_by_rectangles`), so a fixed frame's hole
-  stays free. A 400 x 300 frame with a 320 x 220 hole and 200 copies of a 30 x 28 rectangle:
-  0.9.4 placed 0 in the hole by default, 0.9.5 places 77 (63 at spacing 3), the same as
-  `use_tree_search=True`. Periodic packing also no longer loses one item spacing in front of each
-  obstacle, so a grid that fits exactly next to a fixed item or defect is accepted.
-- Periodic packing still places only rectangular grids, so with irregular items
-  `use_tree_search=True` can place more: 200 L shapes beside a solid 400 x 300 fixed item, 66 by
-  default vs 76 with tree search.
-- **Shape update** (shape `9e216ba5` -> `a4efbe93`): adds `outer_approximation_by_rectangles`.
-  The power-of-two helpers return 1 for values <= 0 (bins are larger than 1, so no wrapper effect).
+- **C++ pin moves to packingsolver `35cbb0fbc` (master, 2026-11-03), 87 commits.** New irregular
+  algorithms (local search engines, tree search on maximal spaces and on relative positions, a
+  Benders decomposition), all reachable from `SolverParams`.
+- **Breaking:** `use_local_search` is replaced by `use_local_search_linear_programming` and
+  `use_local_search_direct_trigonometry` (the nonlinear and black-box engines need Knitro, which
+  the wheel does not ship), and
+  `not_anytime_local_search_maximum_number_of_iterations_without_improvement` by
+  `not_anytime_local_search_maximum_number_of_failed_separations` and
+  `not_anytime_local_search_maximum_number_of_moves_factor`. Upstream removed the old flags, so a
+  0.10.0 binary exits with an error on them. `seed` is now honoured. `optimization_mode` accepts
+  `Exact`. New `leftover_all_bins`.
+- **Sparse single-bin `BIN_PACKING_WITH_LEFTOVERS` no longer leaves a tail** (reported in
+  fontanf/packingsolver#792, fixed by #793). The sequential feasibility started from the full bin
+  width and shrank it 1% per sub-problem, so a run stopped early returned a dense block plus a long
+  row of items out to the far edge. It now starts from a column packing. 2020 copies of a 26 x 23
+  pentagon on one 3000 x 1500 bin: width 851 at 8.7 s, where 0.9.5 needed about 72 s.
+- **Measured on a 9-case CAD corpus** (paired, 2 reps, versus 0.9.5): no unplaced, overlapping
+  or out-of-bin item in any run; same or fewer sheets everywhere (one large job 17 -> 15 sheets);
+  used area equal or smaller in 8 of 9 cases (up to 6% smaller), +0.07% in one. Some jobs
+  take longer to converge (up to +9 s).
 
 Older release notes: [CHANGELOG.md](CHANGELOG.md).
 

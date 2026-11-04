@@ -25,7 +25,7 @@ from pyckingsolver import InstanceBuilder, Objective, Solver, LeftoverMode, Inst
 class _GallerySolver:
     """Solve in the solver's own deterministic mode so the gallery is stable.
 
-    The default 'Anytime' mode is time-limited and the binary ignores --seed, so
+    The default 'Anytime' mode is time-limited and multi-threaded, so
     each run lands on a different (equally optimal) corner/direction — the images
     drift between regenerations. 'NotAnytimeDeterministic' is a native PackingSolver
     mode (no custom post-processing): identical input -> identical, origin-anchored

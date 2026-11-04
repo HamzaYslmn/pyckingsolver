@@ -2,6 +2,23 @@
 
 Older release notes, moved out of the README. The current release's notes stay there.
 
+## 0.9.5
+
+- **C++ pin moves to packingsolver `be6c31921` (master, 2026-10-20).** No API change: the
+  irregular CLI, instance JSON and certificate are untouched, so no wrapper code moves.
+- **Periodic packing sees obstacles as rectangle sets, not bounding boxes**
+  (fontanf/packingsolver#726, follow-up to #720). Fixed items, defects and bin borders are covered
+  by a few rectangles (shape's new `outer_approximation_by_rectangles`), so a fixed frame's hole
+  stays free. A 400 x 300 frame with a 320 x 220 hole and 200 copies of a 30 x 28 rectangle:
+  0.9.4 placed 0 in the hole by default, 0.9.5 places 77 (63 at spacing 3), the same as
+  `use_tree_search=True`. Periodic packing also no longer loses one item spacing in front of each
+  obstacle, so a grid that fits exactly next to a fixed item or defect is accepted.
+- Periodic packing still places only rectangular grids, so with irregular items
+  `use_tree_search=True` can place more: 200 L shapes beside a solid 400 x 300 fixed item, 66 by
+  default vs 76 with tree search.
+- **Shape update** (shape `9e216ba5` -> `a4efbe93`): adds `outer_approximation_by_rectangles`.
+  The power-of-two helpers return 1 for values <= 0 (bins are larger than 1, so no wrapper effect).
+
 ## 0.9.4
 
 - **C++ pin moves to packingsolver `0b2b69ef3` (master, 2026-10-18).** No API change: the

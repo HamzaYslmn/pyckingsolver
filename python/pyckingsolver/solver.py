@@ -56,7 +56,7 @@ class SolverParams:
     stall_timeout: float | None = None           # kill after this many secs w/o an improving write
     first_solution_timeout: float | None = None  # kill if NO solution appeared after this many secs
     verbosity_level: int = 0
-    seed: int | None = None  # binary currently ignores --seed (marked "not used" upstream)
+    seed: int | None = None
     memory_limit_megabytes: int | None = None  # None/0 = unlimited; caps RAM to fail clean instead of OOM-crashing
     only_write_at_the_end: bool = False
     log_path: str | None = None  # no log-to-stderr knob: main.cpp declares --log2stderr but reads another name
@@ -67,14 +67,22 @@ class SolverParams:
     objective: Objective | str | None = None
 
     # Algorithm selection
-    optimization_mode: str | None = None  # Anytime / NotAnytime / NotAnytimeDeterministic / NotAnytimeSequential
+    optimization_mode: str | None = None  # Anytime / NotAnytime / NotAnytimeDeterministic / NotAnytimeSequential / Exact
     use_tree_search: bool | None = None
     use_tree_search_periodic_packing: bool | None = None  # lattice patterns for item types with >16 copies; auto-selected upstream
-    use_local_search: bool | None = None
+    use_tree_search_maximal_spaces: bool | None = None
+    use_tree_search_relative_positions: bool | None = None  # Feasibility with one bin, open dimension objectives
+    use_local_search_linear_programming: bool | None = None
+    use_local_search_nonlinear_programming: bool | None = None  # needs Knitro, not in the wheel
+    use_local_search_direct_trigonometry: bool | None = None
+    use_local_search_black_box_optimization: bool | None = None  # needs Knitro, not in the wheel
+    local_search_weighting_scheme: str | None = None  # multiplicative / additive
     use_milp_raster: bool | None = None
     use_sequential_single_knapsack: bool | None = None
     use_sequential_value_correction: bool | None = None
     use_column_generation: bool | None = None
+    use_benders_decomposition: bool | None = None
+    benders_decomposition_use_tree_search_relative_positions: bool | None = None
     use_dichotomic_search: bool | None = None
     # Instance reduction (preprocessing): merges identical item types, and under KNAPSACK
     # trims negative-profit types to copies_min. Upstream defaults it ON; set False to skip it.
@@ -97,6 +105,7 @@ class SolverParams:
     item_item_minimum_spacing: float | None = None
     item_bin_minimum_spacing: float | None = None  # applied to every bin in Python (Instance input only)
     leftover_mode: LeftoverMode | str | None = None
+    leftover_all_bins: bool | None = None  # also compare the leftover values of the non-last bins
     bin_unweighted: bool = False
     unweighted: bool = False
     continuous_rotations: bool = False
@@ -104,16 +113,27 @@ class SolverParams:
     # Tuning (rarely needed; defaults are good)
     initial_maximum_approximation_ratio: float | None = None
     maximum_approximation_ratio_factor: float | None = None
+    minimum_maximum_approximation_ratio: float | None = None
     sequential_value_correction_subproblem_tree_search_queue_size: int | None = None
+    anytime_sequential_value_correction_growing_queue_maximum_number_of_iterations: int | None = None
+    sequential_value_correction_restrict_bin_types: bool | None = None
+    sequential_value_correction_scarce_item_types_profit_factor_exponent: float | None = None
     column_generation_subproblem_tree_search_queue_size: int | None = None
+    post_process_last_bin_maximum_number_of_items: int | None = None
+    anytime_sequential_single_knapsack_subproblem_tree_search_initial_queue_size: int | None = None
+    anytime_sequential_single_knapsack_subproblem_tree_search_periodic_packing_initial_queue_size: int | None = None
+    anytime_sequential_single_knapsack_subproblem_local_search_initial_maximum_number_of_moves_factor: int | None = None
     not_anytime_maximum_approximation_ratio: float | None = None
     not_anytime_tree_search_queue_size: int | None = None
     not_anytime_tree_search_periodic_packing_queue_size: int | None = None
+    not_anytime_tree_search_maximal_spaces_queue_size: int | None = None
     not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size: int | None = None
+    not_anytime_sequential_single_knapsack_subproblem_tree_search_periodic_packing_queue_size: int | None = None
+    not_anytime_sequential_single_knapsack_subproblem_local_search_maximum_number_of_moves_factor: int | None = None
     not_anytime_sequential_value_correction_number_of_iterations: int | None = None
     not_anytime_dichotomic_search_subproblem_tree_search_queue_size: int | None = None
-    # Caps the local search shrinkage loop outside Anytime mode (upstream default 100).
-    not_anytime_local_search_maximum_number_of_iterations_without_improvement: int | None = None
+    not_anytime_local_search_maximum_number_of_failed_separations: int | None = None
+    not_anytime_local_search_maximum_number_of_moves_factor: int | None = None
 
 
 # MARK: Solver ───────────────────────────────────────────────────────────────
@@ -291,24 +311,41 @@ _FLAG_RENAMES = {
 }
 _COERCE = {"objective": Objective, "leftover_mode": LeftoverMode}
 _BOOL_VALUE_FLAGS = (  # "1" / "0"
-    "use_tree_search", "use_tree_search_periodic_packing", "use_local_search", "use_milp_raster",
+    "use_tree_search", "use_tree_search_periodic_packing", "use_tree_search_maximal_spaces",
+    "use_tree_search_relative_positions", "use_local_search_linear_programming",
+    "use_local_search_nonlinear_programming", "use_local_search_direct_trigonometry",
+    "use_local_search_black_box_optimization", "use_milp_raster",
     "use_sequential_single_knapsack", "use_sequential_value_correction", "use_column_generation",
-    "use_dichotomic_search", "reduce",
+    "use_benders_decomposition", "benders_decomposition_use_tree_search_relative_positions",
+    "use_dichotomic_search", "reduce", "leftover_all_bins",
+    "sequential_value_correction_restrict_bin_types",
 )
 _VALUE_FLAGS = (
     "optimization_mode", "linear_programming_solver", "objective", "leftover_mode",
     "memory_limit_megabytes", "log_path", "json_search_tree_path", "anchor_x_weight",
     "anchor_y_weight", "item_item_minimum_spacing", "seed",
+    "local_search_weighting_scheme",
     "initial_maximum_approximation_ratio", "maximum_approximation_ratio_factor",
+    "minimum_maximum_approximation_ratio",
     "sequential_value_correction_subproblem_tree_search_queue_size",
+    "anytime_sequential_value_correction_growing_queue_maximum_number_of_iterations",
+    "sequential_value_correction_scarce_item_types_profit_factor_exponent",
     "column_generation_subproblem_tree_search_queue_size",
+    "post_process_last_bin_maximum_number_of_items",
+    "anytime_sequential_single_knapsack_subproblem_tree_search_initial_queue_size",
+    "anytime_sequential_single_knapsack_subproblem_tree_search_periodic_packing_initial_queue_size",
+    "anytime_sequential_single_knapsack_subproblem_local_search_initial_maximum_number_of_moves_factor",
     "not_anytime_maximum_approximation_ratio",
     "not_anytime_tree_search_queue_size",
     "not_anytime_tree_search_periodic_packing_queue_size",
+    "not_anytime_tree_search_maximal_spaces_queue_size",
     "not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size",
+    "not_anytime_sequential_single_knapsack_subproblem_tree_search_periodic_packing_queue_size",
+    "not_anytime_sequential_single_knapsack_subproblem_local_search_maximum_number_of_moves_factor",
     "not_anytime_sequential_value_correction_number_of_iterations",
     "not_anytime_dichotomic_search_subproblem_tree_search_queue_size",
-    "not_anytime_local_search_maximum_number_of_iterations_without_improvement",
+    "not_anytime_local_search_maximum_number_of_failed_separations",
+    "not_anytime_local_search_maximum_number_of_moves_factor",
 )
 _PRESENCE_FLAGS = (
     "bin_unweighted", "unweighted", "continuous_rotations", "only_write_at_the_end",

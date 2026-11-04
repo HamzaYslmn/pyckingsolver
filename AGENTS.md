@@ -1,8 +1,8 @@
 # pyckingsolver — Agent Knowledge
 
 Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `be6c31921`, 2026-10-20).
-Python wrapper version: `0.9.5` (see `## v0.2.0 Breaking Changes` below).
+C++ submodule pinned at `extern/packingsolver` (commit `35cbb0fbc`, 2026-11-03).
+Python wrapper version: `0.10.0` (see `## v0.2.0 Breaking Changes` below).
 
 ---
 
@@ -58,7 +58,7 @@ so this compares the wrapper to that binary's CLI, its instance JSON reader
   with a ratio it solves (12 rectangles, ratio 1.5, 3 s). The old `0xC0000005` dumps in
   `_crashes/` were exactly that missing ratio.
 - Local search ignores `item_bin_minimum_spacing` under `BIN_PACKING`: 4 30x30 items in a
-  100x100 bin with spacing 5 touch the edge (min coordinate 0.0) with `use_local_search=True`,
+  100x100 bin with spacing 5 touch the edge (min coordinate 0.0) with `use_local_search=True` (0.9.x; now `use_local_search_linear_programming`, not re-checked on `35cbb0fbc`),
   and sit at 5.0 under tree search, sequential single knapsack or the default selection. A lone
   item that nearly fills the bin takes the same path. Worth an upstream report.
 - `main.cpp` declares two flags it never reads: `--log2stderr` (`read_args` checks
@@ -100,6 +100,28 @@ the periodic-packing thresholds. Wrap them only once `instance_builder.cpp::read
   shipped or wrapped. `Objective.BIN_PACKING_CUTTING_COST` belongs to `rectangleguillotine`;
   irregular accepts the string and exits 0 with `bins: null`, so it is deliberately absent
   from the wrapper's `Objective`.
+
+---
+
+## MARK: Recent Upstream Changes (2026-10-20 → 2026-11-03)
+
+Pulled `be6c31921` → `35cbb0fbc` (87 commits). Irregular CLI changed; instance JSON gained
+`parameters.leftover_all_bins`; output gained leftover-value metrics only. Bundled binary rebuilt.
+
+| Commit | Change | Impact |
+|---|---|---|
+| `35cbb0fb` (#793, after our #792) | **Sequential feasibility starts from a column packing for every objective** | The BPPL tail fix. One 3000x1500 bin, 2020 26x23 pentagons, spacing 4: XMax 851 at 8.7 s (2 runs), 0.9.5 needed ~72 s through base `_repack`. |
+| `f37f6ca5` … `b007da91` | Local search engines: linear programming, direct trigonometry, nonlinear and black-box (Knitro) | **Breaking CLI**: `--use-local-search` and `--not-anytime-local-search-maximum-number-of-iterations-without-improvement` removed; wrapper fields renamed to match. LS-DT joins auto-selection. |
+| `601b0b3a`, `fa17d30f`, `d53224cd` | Tree search on maximal spaces, tree search on relative positions, Benders decomposition | New `use_*` fields. |
+| `376b8d1c`, `d30569e8` | BPPL re-optimizes the non-last bins; `leftover_all_bins` | New `leftover_all_bins` field. |
+| `4348be21` | `Exact` optimization mode | Accepted by `optimization_mode`. |
+| `main.cpp` | `--seed` is read now | `seed` comment updated. |
+
+**Measured** (base `nesting_test.py`, 0.9.5 vs this pin, paired on disjoint 12-core sets, 2 reps):
+0 unplaced / overlap / outside in all 36 runs. Sheets equal everywhere except test5 x10 (17 → 15).
+Billed m2: test8 450.2 → 436.3, test5 10.4 → 9.76, K406 4.53 → 4.30, test6-one3000 47.65 → 46.86,
+test1 15.348 → 15.358, others equal or smaller. Slower to converge on K406 (12.6 → 21.7 s),
+test5 (71 → 84 s), test6-one3000 (3.7 → 6.8 s), test8 (51 → 59 s); test1 faster (27 → 23 s).
 
 ---
 
@@ -527,7 +549,8 @@ The 8 objectives irregular solves: `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_WITH_
 | `memory_limit_megabytes` | ✅ | ✅ | NEW (`--memory-limit`, MiB). `None`/`0` = unlimited. Opt-in OOM guard. |
 | `optimization_mode` | ✅ | ✅ | Anytime / NotAnytime / etc. |
 | `use_tree_search` | ✅ | ✅ | |
-| `use_local_search` | ✅ | ✅ | NEW — local search algorithm |
+| `use_local_search_linear_programming` / `_direct_trigonometry` | ✅ | ✅ | Local search engines (replace `use_local_search` in 0.10.0). The nonlinear and black-box engines need Knitro, which the wheel lacks. |
+| `use_tree_search_maximal_spaces` / `use_tree_search_relative_positions` / `use_benders_decomposition` | ✅ | ✅ | NEW in 0.10.0 |
 | `use_milp_raster` | ✅ | ✅ | NEW — MILP raster algorithm |
 | `use_sequential_single_knapsack` | ✅ | ✅ | |
 | `use_sequential_value_correction` | ✅ | ✅ | |
@@ -718,7 +741,7 @@ For typical CAD nesting (100+ unique parts, copies=1, items fit ~20+ per bin):
 | `not_anytime_tree_search_queue_size` | 512 | Tree search beam width in NotAnytime mode |
 | `not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size` | 512 | SSK subproblem beam |
 | `not_anytime_dichotomic_search_subproblem_tree_search_queue_size` | 128 | Dichotomic search beam |
-| `not_anytime_local_search_maximum_number_of_iterations_without_improvement` | -1 | Local search shrinkage cap (non-Anytime) |
+| `not_anytime_local_search_maximum_number_of_failed_separations` / `_moves_factor` | | Local search caps (non-Anytime); replace `..._iterations_without_improvement` in 0.10.0 |
 | `sequential_value_correction_subproblem_tree_search_queue_size` | 128 | SVC inner knapsack beam |
 | `column_generation_subproblem_tree_search_queue_size` | 128 | CG inner knapsack beam |
 
