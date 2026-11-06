@@ -27,7 +27,7 @@ jobs:
           - { os: windows-latest,  tag: win_amd64,                bin: packingsolver_irregular.exe }
           - { os: ubuntu-24.04,    tag: manylinux_2_39_x86_64,    bin: packingsolver_irregular     }
           - { os: ubuntu-24.04-arm,tag: manylinux_2_39_aarch64,   bin: packingsolver_irregular     }
-          - { os: macos-14,        tag: macosx_11_0_arm64,        bin: packingsolver_irregular     }
+          - { os: macos-15,        tag: macosx_15_0_arm64,        bin: packingsolver_irregular     }
 
     steps:
     - uses: actions/checkout@v7

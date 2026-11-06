@@ -29,13 +29,15 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
-## What's New in 0.10.1
+## What's New in 0.10.2 (0.10.1 never reached PyPI)
 
 - **The Linux wheels run on glibc 2.39 again.** 0.10.0's x86_64 binary was built on GitHub's
   `ubuntu-latest` after it moved to Ubuntu 26.04, so it needed `GLIBC_2.43` under a
   `manylinux_2_35` tag: on Debian 13 (`python:3.14-slim`, glibc 2.41) every solve exited 1 with
   "version `GLIBC_2.43' not found". The Linux runners are now pinned to Ubuntu 24.04 and the wheels
-  are tagged `manylinux_2_39`, which is what they need. Solver and API are unchanged from 0.10.0.
+  are tagged `manylinux_2_39`, which is what they need. The macOS wheel builds on `macos-15` (GitHub
+  retired `macos-14`, which failed the 0.10.1 run) and is tagged `macosx_15_0_arm64`. Solver and API are
+  unchanged from 0.10.0.
 
 ## What's New in 0.10.0
 
