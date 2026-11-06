@@ -29,6 +29,14 @@ The C++ solver binary is **bundled** — no compilation needed on Windows x64 an
 
 ---
 
+## What's New in 0.10.1
+
+- **The Linux wheels run on glibc 2.39 again.** 0.10.0's x86_64 binary was built on GitHub's
+  `ubuntu-latest` after it moved to Ubuntu 26.04, so it needed `GLIBC_2.43` under a
+  `manylinux_2_35` tag: on Debian 13 (`python:3.14-slim`, glibc 2.41) every solve exited 1 with
+  "version `GLIBC_2.43' not found". The Linux runners are now pinned to Ubuntu 24.04 and the wheels
+  are tagged `manylinux_2_39`, which is what they need. Solver and API are unchanged from 0.10.0.
+
 ## What's New in 0.10.0
 
 - **C++ pin moves to packingsolver `35cbb0fbc` (master, 2026-11-03), 87 commits.** New irregular
@@ -741,7 +749,7 @@ rect = rectangle_polygon(80, 40)
 
 ## Building the Solver
 
-Pre-built binaries are bundled in the pip wheel for **Windows x64** and **Linux x64**.
+Pre-built binaries are bundled in the pip wheel for **Windows x64** and **Linux x64** (glibc 2.39 or newer).
 
 For other platforms, build from the included submodule:
 
