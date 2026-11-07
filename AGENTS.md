@@ -1,775 +1,151 @@
-# pyckingsolver — Agent Knowledge
+# pyckingsolver: Agent Knowledge
 
-Python wrapper for [fontanf/packingsolver](https://github.com/fontanf/packingsolver) irregular (2D nesting) module.  
-C++ submodule pinned at `extern/packingsolver` (commit `35cbb0fbc`, 2026-11-03).
-Python wrapper version: `0.10.2` (see `## v0.2.0 Breaking Changes` below).
+Python wrapper over [fontanf/packingsolver](https://github.com/fontanf/packingsolver)'s irregular (2D
+nesting) solver. Wrapper `0.11.0` (unreleased), submodule `extern/packingsolver` at `05cc7478`.
 
----
+**Design rule.** The API mirrors upstream's own Python module `packingsolver.irregular`
+(`extern/packingsolver/python/src/irregular.cpp`, `common.hpp`): same class, method, argument, field
+and enum member names. Where the bindings lack something the C++ has, follow the C++ name
+(`add_fixed_item`). Two deliberate differences: shapes are Shapely polygons, and `optimize()` runs the
+bundled `packingsolver_irregular` binary in a subprocess (crash isolation, a hard kill), so only what
+its CLI or instance JSON accepts is reachable. No compatibility layer for older APIs.
 
-## MARK: Version Tags
+## MARK: Version tags
 
-When bumping the Python wrapper version, update all current-version tags:
+A release bump touches `python/pyproject.toml` `version`, `python/pyckingsolver/__init__.py`
+`__version__`, the `name = "pyckingsolver"` entry in `python/uv.lock` and `test/uv.lock`, the version
+line above, and a `CHANGELOG.md` entry. Pushing the tag `vX.Y.Z` builds the four wheels and publishes
+to PyPI (`.github/workflows/build.yml`).
 
-- `python/pyproject.toml` `[project].version`
-- `python/pyckingsolver/__init__.py` `__version__`
-- `python/uv.lock` and `test/uv.lock` — `[[package]] name = "pyckingsolver"` version
-- This file's top `Python wrapper version` line
-- `README.md` release/current binary note if the bundled C++ solver pin changed
-- Git release tag uses `vX.Y.Z` format, for example `v0.3.3`
-
-Historical headings such as `v0.2.0 Breaking Changes` are not current-version tags and should not be rewritten during a release bump.
-
----
-
-## MARK: Wrapper Gaps vs Upstream
-
-Reviewed against `9917fcb0f`. `packingsolver_irregular` is the only binary the wheel ships,
-so this compares the wrapper to that binary's CLI, its instance JSON reader
-(`src/irregular/instance_builder.cpp::read`) and its solution/output JSON.
-
-**Closed in 0.8.0**
-
-- `item_types[].copies_min` — read by upstream since `aa0aba9c`, now `add_item(copies_min=)`.
-  Measured: a 100x100 bin, one 90x90 item at profit 1 and 25 20x20 items at profit 50, KNAPSACK.
-  Without it the solver packs 25 smalls for profit 1250 and skips the big item; with
-  `copies_min=1` on the big item it packs that one instead.
-- `--not-anytime-tree-search-periodic-packing-queue-size` — the last irregular CLI option with
-  no `SolverParams` field. The flag lists now match `main.cpp` exactly.
-- `_read_metrics` read `raw["Solution"]`, a key the file does not have, so `Solution.metrics`
-  was the whole `--output` document. It is now `Output.Solution` merged with the run-level
-  `Output` keys, minus `IntermediaryOutputs`.
-
-**Open, upstream cannot express it from JSON**
-
-- **Resources** (`BinType::resources`, capacity/consumption/penalty, enforced at tree-search
-  level since `72f75d54`). `box`, `onedimensional`, `rectangle` and `rectangleguillotine` all
-  parse a `"resources"` array in their bin types; `irregular`'s reader does not. Only the C++
-  `InstanceBuilder::add_bin_type_resource` API can set them, which a subprocess wrapper cannot
-  reach. Needs an upstream issue, not a wrapper change.
-- **Quality rules** (`Parameters::quality_rules`, `ItemShape::quality_rule`, `Defect::type`).
-  `build()` validates them but `read()` never populates them, so a defect type can be written
-  and nothing consumes it. Same story: upstream first. This is why v0.4.0 dropped the wrapper's
-  quality-rule surface as inert; it still is.
-- `Parameters::scale_value` — likewise C++-only.
-
-**Live upstream bugs, re-checked on `1f352c404`**
-
-- `OPEN_DIMENSION_XY` without `open_dimension_xy_aspect_ratio` is now a clean `build()` error;
-  with a ratio it solves (12 rectangles, ratio 1.5, 3 s). The old `0xC0000005` dumps in
-  `_crashes/` were exactly that missing ratio.
-- Local search ignores `item_bin_minimum_spacing` under `BIN_PACKING`: 4 30x30 items in a
-  100x100 bin with spacing 5 touch the edge (min coordinate 0.0) with `use_local_search=True` (0.9.x; now `use_local_search_linear_programming`, not re-checked on `35cbb0fbc`),
-  and sit at 5.0 under tree search, sequential single knapsack or the default selection. A lone
-  item that nearly fills the bin takes the same path. Worth an upstream report.
-- `main.cpp` declares two flags it never reads: `--log2stderr` (`read_args` checks
-  `log-to-stderr`) and `--item-bin-minimum-spacing`. The wrapper dropped `log_to_stderr` and
-  writes `item_bin_minimum_spacing` into the bins itself; `test_nesting.py` lists both as dead.
-- The binary writes `null` to the certificate at t~0 and rewrites the same layout on every
-  bound update. The adaptive-stop watchdog counts only a changed, non-empty layout as progress.
-- A bin's `holes` are dropped: the reader parses bins as a plain `Shape`. The wrapper sends a
-  bin Polygon's interiors as defects, spaced by the bin's item-bin spacing.
-- Native `type:"circle"` items threw in `compute_shape_supports` on `9917fcb0f`; circular
-  *bins* work since `2db32256`. `geometry.py` still discretizes circles.
-- **A pinned item's holes are not free space.** Measured on `9917fcb0`: a 150x100 bin holding
-  one 4-hole plate and 8 R=8 discs places 4 discs, all four inside holes, when the plate is a
-  normal item; pin the same plate with `add_fixed_item` and the solve places **zero** discs.
-  Widen the bin to 300x100 and the pinned run places all 8 discs but none in a hole. Holds with
-  spacing 0 and with 8 mm of radial clearance, so it is not a spacing margin. Anything relying on
-  `add_fixed_item` to expose a parent's holes for backfilling needs to verify it still does.
-
-**Open, would be a wrapper change**
-
-- **Native circular arcs on input.** `type:"general"` with `CircularArc` elements is accepted
-  and round-trips: an 8-copy half-disc knapsack solves and the certificate echoes
-  `CircularArc` elements back. The wrapper already *parses* arcs (`elements_to_polygon`) but
-  only *emits* `type:"polygon"`, so every arc goes in as a 64-segment approximation. Emitting
-  arcs would need a non-Shapely carrier for the input geometry (Shapely has no arc primitive),
-  i.e. a new API surface, so it is a deliberate deferral, not an oversight.
-  Whole circles are the exception since 0.9.0: `ItemShape.circle` carries `(x, y, r)` and goes
-  out as native `type:"circle"` (measured on `1f352c404`: 30 R=10 discs, spacing 1, 100x100
-  knapsack, exit 0, `CircularArc` back). Bins and defects stay polygons (inscribed is the
-  safe direction there).
-
-**Only in upstream's library and bindings (not readable from the instance JSON or CLI)**
-
-Quality rules, resources, tree-search guides, solution-pool size, reduction sub-options and
-the periodic-packing thresholds. Wrap them only once `instance_builder.cpp::read` or
-`main.cpp` reads them.
-- **Other problem types.** `rectangle`, `rectangleguillotine`, `box`, `boxstacks`,
-  `onedimensional` each have their own binary, instance JSON and solution JSON. None are
-  shipped or wrapped. `Objective.BIN_PACKING_CUTTING_COST` belongs to `rectangleguillotine`;
-  irregular accepts the string and exits 0 with `bins: null`, so it is deliberately absent
-  from the wrapper's `Objective`.
-
----
-
-## MARK: Recent Upstream Changes (2026-10-20 → 2026-11-03)
-
-Pulled `be6c31921` → `35cbb0fbc` (87 commits). Irregular CLI changed; instance JSON gained
-`parameters.leftover_all_bins`; output gained leftover-value metrics only. Bundled binary rebuilt.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `35cbb0fb` (#793, after our #792) | **Sequential feasibility starts from a column packing for every objective** | The BPPL tail fix. One 3000x1500 bin, 2020 26x23 pentagons, spacing 4: XMax 851 at 8.7 s (2 runs), 0.9.5 needed ~72 s through base `_repack`. |
-| `f37f6ca5` … `b007da91` | Local search engines: linear programming, direct trigonometry, nonlinear and black-box (Knitro) | **Breaking CLI**: `--use-local-search` and `--not-anytime-local-search-maximum-number-of-iterations-without-improvement` removed; wrapper fields renamed to match. LS-DT joins auto-selection. |
-| `601b0b3a`, `fa17d30f`, `d53224cd` | Tree search on maximal spaces, tree search on relative positions, Benders decomposition | New `use_*` fields. |
-| `376b8d1c`, `d30569e8` | BPPL re-optimizes the non-last bins; `leftover_all_bins` | New `leftover_all_bins` field. |
-| `4348be21` | `Exact` optimization mode | Accepted by `optimization_mode`. |
-| `main.cpp` | `--seed` is read now | `seed` comment updated. |
-
-**Measured** (base `nesting_test.py`, 0.9.5 vs this pin, paired on disjoint 12-core sets, 2 reps):
-0 unplaced / overlap / outside in all 36 runs. Sheets equal everywhere except test5 x10 (17 → 15).
-Billed m2: test8 450.2 → 436.3, test5 10.4 → 9.76, K406 4.53 → 4.30, test6-one3000 47.65 → 46.86,
-test1 15.348 → 15.358, others equal or smaller. Slower to converge on K406 (12.6 → 21.7 s),
-test5 (71 → 84 s), test6-one3000 (3.7 → 6.8 s), test8 (51 → 59 s); test1 faster (27 → 23 s).
-
----
-
-## MARK: Recent Upstream Changes (2026-10-18 → 2026-10-20)
-
-Pulled `0b2b69ef3` → `be6c31921` (2 commits). No irregular CLI, instance key or output change.
-Bundled binary rebuilt + re-bundled.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `be6c3192` (#726, follow-up to #720) | **Periodic packing obstacles as rectangle sets**: fixed items, defects and bin borders are covered by `outer_approximation_by_rectangles` (shape `a4efbe93`) instead of their AABB, capped by the simplification waste budget; one item spacing no longer lost in front of each obstacle | A holed pin's hole is free space again: frame + 200 rectangles 0 -> 77 by default (63 at spacing 3), equal to tree search. Irregular items still pack tighter with `use_tree_search=True` (L shapes 66 vs 76), since periodic packing only places grids. |
-| `2773ddab` | Power-of-two helpers return 1 for values <= 0 | Bins are larger than 1. None. |
-
-**Wrapper impact**: none. No CLI flag, instance key or output change.
-
----
-
-## MARK: Recent Upstream Changes (2026-10-17 → 2026-10-18)
-
-Pulled `a5ddea695` → `0b2b69ef3` (3 commits). No irregular CLI, instance key or output change.
-Bundled binary rebuilt + re-bundled.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `0b2b69ef` (#721, fixes #720) | **Fixed items in `tree_search_periodic_packing`**: each fixed item is cut out of the root's free space as its AABB inflated by the item-item spacing, consumes a copy of its type, and is written to the solution | Auto-selection picks periodic packing for a single bin once >16-copy types cover 80% of the bin or of the item area, with or without fixed items. Before, pins vanished from the certificate and items landed on them (#720 instance: 3707 mm2 on the pin). Now kept with no overlap, spacing 3 held. AABB approximation: `use_tree_search=True` can still pack tighter around big irregular pins. |
-| `2e2448f8` (shape `0944ac20` → `9e216ba5`, 9 commits) | `GeneralizedTrapezoid::extend_left` updates widths and area; `Shape::check` rejects disconnected consecutive elements; `Circle` basic shape; docs | Trapezoids are irregular's own path, so layouts can move. The check could reject a malformed input shape that passed before. `Circle` is unused (the wrapper discretizes arcs). |
-| `4efc8281` | Power-of-two helpers return exact powers | `scale_value` uses `smallest_power_of_two_greater_or_equal(value_max)`, wrong only below 1; bins are larger. None. |
-
-**Wrapper impact**: none. No CLI flag, instance key or output change.
-
----
-
-## MARK: Recent Upstream Changes (2026-10-12 → 2026-10-17)
-
-Pulled `79b67f8f9` → `a5ddea695` (5 commits; three touch only box, boxstacks, rectangle and
-rectangleguillotine, one adds an AI bug-report note to the headers). No irregular CLI, instance key
-or output change. Bundled binary rebuilt + re-bundled.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `a5ddea69` (shape `04409204` → `0944ac20`, 57 commits) | **Shape robustness**: boolean operations with full circles and opposite identical elements, inflation of shapes with circular holes, trapezoidation of shapes split by touching holes, exact angle sorts in `convex_hull` and `no_fit_polygon`, simplify within its tolerance, full circles approximated by at least 4 segments | All on irregular's own paths: spacing inflation, NFPs, trapezoids, hull. Layouts can move. Checked on this build: the wrapper tests and a 6-file CAD corpus nest with no crash and no overlap. |
-| `bc6c1856` | Header comment pointing AI agents to the upstream bug-report notes | None. |
-| `649fd652`, `3be7e789`, `8110c847` | Reductions (redundant rotations, lifted item dimensions) and tree search guide / open dimension bounds fixes | Not irregular. |
-
-**Wrapper impact**: none. No CLI flag, instance key or output change.
-
----
-
-## MARK: Recent Upstream Changes (2026-10-05 → 2026-10-12)
-
-Pulled `816b70771` → `79b67f8f9` (two syncs: `09fda1058`, then 56 more commits, nearly all docs, the
-web viewer and the other problem types). No irregular CLI, instance key, header or output change.
-Bundled binary rebuilt + re-bundled.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `bc08f02e` (shape `1ff57b5`) | Convex hull keeps a point barely above the pivot on its left | Hull feeds tree search, rotations and large item first; found on an approximated arc, the wrapper's shape for every arc. Layouts can move. |
-| `0216c95e` | `build()` recomputes the arc centers of scaled item, bin and defect shapes | Inert for the wrapper: arcs in polygons are discretized, and full circles (start == end) are skipped. Would matter if the wrapper ever sent DXF arcs natively. |
-| `82522ad6` (shape `0440920`) | Mirroring an arc no longer turns it into its complement | Inert for the same reason. |
-| `4e4dcf3f` | `NotAnytimeDeterministic` sub-algorithms stop once their own solution is proven optimal | Faster not-anytime-deterministic runs; the result stays deterministic. `Anytime` unchanged. |
-
-**Wrapper impact**: none. No CLI flag, instance key or output change.
-
----
-
-## MARK: Recent Upstream Changes (2026-10-05 → 2026-10-05)
-
-Pulled `27a0b1778` → `816b70771` (5 commits, four of them the web page). 0.9.0 shipped `27a0b1778`,
-not the `1f352c404` its notes name; the two commits between (`9a43ee1dd` rectangleguillotine,
-`27a0b1778` onedimensional/rectangle reductions) do not touch irregular. Bundled binary rebuilt + re-bundled.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `816b70771` | Irregular: remap a sub-instance's fixed items before checking them | Not the fix the wrapper needs. `Reduction::merge_identical_items` gives a merged-away item type no `orig_to_sub` id, so a fixed item on it still throws "fixed item type id not found in sub-instance mapping". Re-checked 3/3 on both reproducers (the `test_nesting.py` pinned-duplicates case with `reduce=True`, item 1; a 95-type KNAPSACK dump, item 19). The `reduce=None` workaround in `Solver.solve` stays. |
-| `02eefe2b3`, `2e2741234`, `efd9b451e`, `b848c4f88` | Web page: irregular form details, fixed items, general shapes, custom rotations | Inert for the wrapper. |
-
-**Wrapper impact**: none. No CLI flag, instance key or output change.
-
----
-
-## MARK: Recent Upstream Changes (2026-09-27 → 2026-10-05)
-
-Pulled `bf273e9bf` → `1f352c404` (60 commits, mostly the new nanobind Python bindings, a WebAssembly
-module and its web page). No dependency pin moves for irregular. Bundled binary rebuilt + re-bundled.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `49a60984` | **Remove the `Default` objective** | `"default"` is no longer parsed. Wrapper drops `Objective.DEFAULT` (breaking, hence 0.9.0). |
-| `29ff819b` | **`copies_min != copies` rejected outside KNAPSACK** | `build()` throws. Wrapper only emits `copies_min` when set, so unset items are fine; documented in `add_item`. |
-| `3d2d2776` | Item `copies == -1` resolved under KNAPSACK | Unlimited copies: as many as the total bin area allows; rejected if a bin type is unlimited too. Works through `add_item(copies=-1)` unchanged. |
-| `ff718402`, local search | Local search: no placement inside a full bin, `fits_some_bin` on sub-instances, iteration cap | New CLI flag `--not-anytime-local-search-maximum-number-of-iterations-without-improvement` → `SolverParams` field of the same name. |
-| `fd45c17b`, `e501ec5f` | Infeasibility proven upfront (item fits no bin, 1D relaxation) | Surfaces as `IsProvenInfeasible`; no wrapper change. |
-| `bb1ed9e5`, `77f97555` | Sequential feasibility fixed for OpenDimensionXY; ODXY without aspect ratio now throws | Wrapper unchanged. |
-| `2db32256` | Circular bins | Inert: the wrapper sends polygonized circles. |
-| `e2e6b42b`, `9bcc14ab` | Holes kept on copied item types; `add_fixed_item`/`can_contain` bounds checks | Robustness. |
-| `1d03afab` | Upstream nanobind Python bindings (`PACKINGSOLVER_BUILD_PYTHON`, default OFF) | Not used: the CI build is unaffected and this wrapper keeps the subprocess model (crash isolation, hard kill). |
-| `e0ceb677` | Readers reject unknown enum values, zero dimensions | The wrapper only writes known values. |
-
-**Wrapper impact**: `Objective.DEFAULT` removed, one new `SolverParams` field.
-
----
-
-## MARK: Recent Upstream Changes (2026-09-16 → 2026-09-27)
-
-Pulled `3f4faae1a` → `bf273e9bf` (14 commits). Bundled binary rebuilt + re-bundled. Dependency pins
-move: `shape` `4d53dd0` → `b347249` (two bumps), `columngenerationsolver` `1274df4` → `091ee51`,
-`mathoptsolverscmake` `66b6e34` → `358904e`.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `bf273e9b` | **shape bump: irregular instance-building failures (#595, #598)** | Crash fixes on this wrapper's own workload. The line-segment approximation of an arc ended with a degenerate segment, so circular holes looked self-intersecting (shape#69); the fallback union used clockwise extras for anticlockwise arcs and filled holes (shape#70); tangencies came out as two intersections micro-units apart or as none, failing boolean ops with `face area is not positive` or overflowing the stack (shape#71, #72); `no_fit_polygon` merged nearly parallel edges in the wrong order, so the self-NFPs periodic packing relies on were not exact and the lattice unions failed (shape#73). |
-| `9ae71316` | **shape bump + adapt to a stricter `convex_hull`** | More crash fixes: `trapezoidation()` segfault when a touching hole consumes the outline, a crash on a hole not contained in its outer shape, `deflate()` building a self-intersecting piece past an arc's radius. `convex_hull` now rejects circular arcs, so irregular's three call sites (`rotations.cpp`, `large_item_first.cpp`, `tree_search.cpp`) approximate arcs first. The wrapper sends Shapely polygons, which never carry arcs, so that part is inert here. |
-| `c119bdbf` | **sequential value correction: Knapsack shortfall term and a 0/0 profit** | Shared template, reaches irregular's KNAPSACK SVC branch. An item type left fully unpacked divided 0 by 0 when its profit was updated, poisoning later iterations with NaN; the "unpacked copies" pressure term, meant for bin packing where every copy must go in, also applied to KNAPSACK. Both fixed. Layouts on high-copy knapsack pools can change. |
-| `4a227d5e` | column generation: configurable rounding heuristic | Default stays `Initial`, which is what irregular had. No change here. |
-| rest | boxstacks, onedimensional, rectangle, weight tolerance, truck | Other problem types. |
-
-**Wrapper impact**: none. No CLI, instance-JSON or solution-JSON change; `packingsolver_irregular`
-accepts exactly the flags it did in 0.8.2.
-
----
-
-## MARK: Recent Upstream Changes (2026-09-12 → 2026-09-16)
-
-Pulled `c767f5428` → `3f4faae1a` (5 commits). Bundled binary rebuilt + re-bundled. Two reach
-irregular; `shape` moves again, `columngenerationsolver` does not.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `3f4faae1` | **shape bump: invalid inflated item shapes (#574)** | Instance-build failure on this wrapper's own workload. Two numeric bugs: catastrophic cancellation in the line/circle and circle/circle intersection routines, which made a genuine crossing indistinguishable from a tangency for circles far from the origin and threw `outline area is not positive` during `compute_union`; and the line/arc and arc/arc routines discarding only one of two roots duplicating a shared endpoint, leaving a spurious intersection that made `Shape::check()` report `shape self intersect` on an item's own inflated shape. Together they broke `item_item_minimum_spacing` with more than 16 copies of some shapes, in either the periodic-packing self-NFP or the spacing inflate. Third fix in this family after 0.8.1's #558 and #563. |
-| `24decc4c` | **instance reduction added to irregular, exposed as `--reduce`** | New preprocessing, **on by default**, wrapping the whole `optimize()` dispatch and mapping back through `unreduce_solution`. Two operations: merging identical item types (any objective), and trimming negative-profit item types to `copies_min` (Knapsack only). Now reachable as `SolverParams.reduce`. |
-| `7984aeba` | feasibility callback returns cuts alongside its verdict | No behaviour change; `FeasibilityCallback` is unused in every problem type. Groundwork for solving rectangle's Benders master incrementally. |
-| `a944efe4` | rectangle: incompatible-triplet cuts in Benders decomposition | Other problem type. |
-| `92e772cd` | boxstacks: skip unsized bins in `feasible_axle_weights` (#576) | Other problem type. |
-
-**Wrapper impact**: one additive change, `SolverParams.reduce` → `--reduce`, which keeps every CLI
-option the binary accepts reachable from `SolverParams`. No instance-JSON or solution-JSON change:
-reduction is internal to `optimize()` and the solution comes back in original item type ids.
-
----
-
-## MARK: Recent Upstream Changes (2026-09-02 → 2026-09-12)
-
-Pulled `9917fcb0f` → `c767f5428` (23 commits). Bundled binary rebuilt + re-bundled. Six touch
-`src/irregular/`, and both dependency pins move with them: `shape` `1e57508` → `6ab9cb6`,
-`columngenerationsolver` `4e0987c` → `1274df4`.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `818453a5` | **shape bump: convex partition segfault (#558)** | Crash fix on our workload. `compute_convex_partition` emitted a degenerate zero-area part when `trapezoidation()` collapsed one side of a trapezoid to a point; computing an NFP against it threw `orbiting_shape is not convex` instead of packing it. Reported against real production data. |
-| `a3e8a96c` | **shape bump: `inflate()` segfault (#563)** | Crash fix on our workload. `find_point_strictly_inside` could return a point outside the shape (horizontal edge along the ray, or a reflex vertex on it), so the only valid face was dropped and `inflate()` dereferenced the empty list. `inflate()` builds the offset outline for `item_item_minimum_spacing`, which every spaced nest uses, on shapes with fillet arcs. |
-| `17402bf1` | **cap eager periodic-packing precompute by shape complexity** | Hang fix. `InstanceBuilder::build()` gated the self-NFP precompute on copy count alone. Upstream measured ~22 s at 442 vertices and unfinished after two minutes at 4068; above the new vertex cap the type falls back to plain AABB-grid blocks. Arc-approximated CAD outlines land in that range. |
-| `19e1e9c9` | check the time limit while expanding a node's children | Makes `time_limit` hold. `insertions()` and `children()` were uninterruptible, so one node could overrun the whole budget; the timer is now checked every 100 candidates. |
-| `b575ef46` | sequential_value_correction: plain space profit for the single-knapsack case | Packing quality change on high-copy pools. `initial_profit_exponent` drops 1.1 → 1.0 in `optimize_sequential_single_knapsack`, irregular included (`src/irregular/optimize.cpp:425`), which is a branch KNAPSACK auto-selects when copies dominate. Layouts change. |
-| `3fbf96e0` | compute periodic packings on simplified item shapes | All three callers now run the self/rotation-pair NFP on `shape_simplification(instance, 0.001, 64)` instead of the exact shape. Layouts change. |
-| `614ffa97` | cut out bin borders in `tree_search_periodic_packing`'s root | Only bites on non-rectangular bins, which the search previously packed outside of. No effect on rectangular bin types; it does make polygon bins usable. |
-| `a7e53303` | store `Resource::item_consumptions` sparsely | Build-time perf. `InstanceBuilder::build()` on 2000 item types and 5000 resources drops ~105 ms → ~4 ms. Aimed at rectangle's Benders, but irregular's consumers were updated too. |
-| rest | rectangle, box, boxstacks, onedimensional | Other problem types. Reached only by signature adaptations in the shared templates. |
-
-**Wrapper impact**: none. No CLI, instance-JSON or solution-JSON change. **Layouts change**: three
-commits alter `tree_search_periodic_packing` and one alters the single-knapsack SVC guide, so the
-0.7.0 benchmark numbers no longer describe this binary. Re-measure before moving a downstream
-version floor.
-
----
-
-## MARK: Recent Upstream Changes (2026-09-01 → 2026-09-02)
-
-Pulled `5c8dcbcde` → `9917fcb0f` (2 commits). Bundled binary rebuilt + re-bundled. Upstream's
-rolling `latest` release tag still points at `5c8dcbcde`, so there is no prebuilt binary for
-this pin yet; the wheel CI builds from the submodule regardless.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `bb5eb118` | **column_generation: subset-row cuts charged their resource per item copy instead of per item type** | Correctness, reachable from irregular. `src/algorithms/column_generation.hpp` is the shared template `optimize_column_generation` instantiates. The pricing resource set only copy 0 to 1.0 and `Resource::item_consumption` repeats the last entry, so every further copy charged 1.0 too, making the resource count copies packed rather than distinct types present, unlike the `coefficient()` used to charge the cut in the master. A trailing 0.0 caps it at 1.0 per type. Visible only when column generation runs (auto-selected for BinPacking/VSBP with several bin types) on pools with multi-copy item types. |
-| `9917fcb0` | onedimensional: restore the objective allow-list around `use_milp_assignment` | Build only for irregular. `optimize_onedimensional_bound` does call `onedimensional::optimize` and forwards the irregular objective, but never sets `use_milp_assignment`, so the `std::invalid_argument` was unreachable — verified by running a `bin-packing-with-leftovers` instance on the pre-fix binary (exit 0, solution written). |
-
-**Wrapper impact**: no CLI, instance-JSON or solution-JSON change. The 0.8.0 wrapper edits
-close pre-existing gaps (see `## MARK: Wrapper Gaps vs Upstream` above), they do not track
-this pull.
-
----
-
-## MARK: Recent Upstream Changes (2026-07-21 → 2026-09-01)
-
-Pulled `1ad3c94e9` → `5c8dcbcde`. Bundled Windows binary taken from upstream's own `latest`
-release build of that commit (the CI workflow rebuilds it for the wheel). Upstream moves the
-`latest` tag on every build, so refresh the submodule with `git fetch --force --tags origin`
-before pulling; a plain `git pull --tags` refuses to clobber the stale local tag.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `e30420a7` / `a68dd2ff` | **irregular: add `tree_search_periodic_packing`; enforce item-item/item-bin spacing in it** | **Behavioral, the reason for 0.7.0.** Item types with more than 16 copies are tiled as a lattice. Auto-selected for single-bin objectives; new CLI flag `--use-tree-search-periodic-packing` exposed as `SolverParams.use_tree_search_periodic_packing`. |
-| `0cae9d04` | tree search and sequential value correction consider bin types by increasing space for Knapsack | Behavioral, better bin choice. |
-| `4803f637` | Detect proven infeasibility for BinPacking/VSBP/Knapsack | Solver exits early instead of running out the clock. |
-| `25a025a4` | rectangle, irregular: respect defects in tree-search maximal-spaces algorithms | Correctness with defects. |
-| `aa0aba9c` / `f9db3361` | `ItemType::copies_min` across problem types, wired into column generation and MILP | New instance field; wrapper does not expose it yet. |
-| `615bd31a` | Fix HiGHS callback interrupt request | Stability. |
-| `86fc058f` / `d2a94803` | shape dependency bump, basic-shapes decomposition moved into shape | Build only. |
-
----
-
-## MARK: Recent Upstream Changes (2026-07-05 → 2026-07-11)
-
-Pulled `750c7d7fd` → `59f50fed3` (15 commits). Bundled binary rebuilt + re-bundled.
-
-Only 3 commits touch `src/irregular` (the module the wrapper ships); the rest are
-rectangleguillotine / box / boxstacks / onedimensional or tooling/tests, none
-reachable from `packingsolver_irregular`.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `a13c8bf1f` | **Fix NotAnytimeDeterministic racing across algorithms in optimize()** | **Behavioral — the reason to rebuild.** Reworks how the parallel algorithms are launched/collected in every domain's `optimize()` (irregular +167 lines) so `NotAnytimeDeterministic` no longer races between threads. No API/CLI/JSON change; deterministic solves are now actually reproducible. |
-| `3282a7bcf` | rectangle, irregular: print leftover mode in `Instance::format` for BinPackingWithLeftovers | stdout only — wrapper never parses `Instance::format` output. No impact. |
-| `76ed100b3` | Remove unused includes across all domains | Build only. |
-| `59f50fed3` / `beac97016` / `65ab2aee5` / `61b0ee0b6` / `8d379c045` / `ea670b2f8` | rectangleguillotine: cutting-cost fixes, new `BinPackingCuttingCost` objective, DP→tree-search-hypergraph rename | Other domain — not reachable from `packingsolver_irregular`. |
-| `48aec0c28` / `710fd4666` / `8ad89572b` | boxstacks / box / onedimensional internal fixes + refactors | Other domain. |
-| `b683f0c01` / `a2f598b07` | scripts: visualizer `--scale`, fonts, subplot aspect ratio | Tooling only. |
-| `67aad9299` | Fix `sequential_strips_onedimensional` subproblem tests | Test only. |
-
-**Wrapper impact**: zero. No new irregular CLI flags, input/output JSON
-unchanged, no Python source edits required. Rebuild + re-bundle
-`packingsolver_irregular.exe` to pick up the `NotAnytimeDeterministic`
-determinism fix (done for this bump).
-
----
-
-## MARK: Recent Upstream Changes (2026-06-30 → 2026-07-05)
-
-Pulled `8ea3129e6` → `750c7d7fd` (22 commits). Bundled binary rebuilt + re-bundled.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `4c40e57e0` | **irregular: skip bins that can't fit any item in the tree search** | **Behavioral — the reason to rebuild.** Previously a bin position where nothing fit dead-ended the branch (no insertions possible). Now the next bin position is tried; skipped bins are still added to the solution **as empty bins** to keep bin positions and cost accounting consistent. Wrapper parsing already tolerates `items: []`; note that `Solution.bins` may now contain empty bins and `total_bins_used()` counts them (matches C++ `BinCost`). |
-| `91f2dacf9` + 12 more | rectangleguillotine: new `sequential_strips_onedimensional` algorithm, new `maximum_number_1_cuts` / `maximum_distance_2_cuts` instance params, many `column_generation_strips` fixes | Other domain — not reachable from `packingsolver_irregular`. |
-| `bbe384e4c` | `Output` gains `open_dimension_x_bound` / `open_dimension_y_bound` (common.hpp) | Only set/serialized by rectangleguillotine; irregular `--output` metrics JSON unchanged. |
-| `416f2cea6` | Fix dash-underline width for X/Y column headers | Cosmetic stdout only (touches irregular `algorithm_formatter`); wrapper never parses stdout tables. |
-| `c67b89360` | extern: bump `columngenerationsolver` GIT_TAG | Build only — CG algorithm internals; no API change. |
-| `a519caaa5` / `43fda0773` / `e65bb1356` / `9a52f867e` / `4c40e57e0`-tests | Test restructuring into `tree_search` dirs | Test only. |
-
-**Wrapper impact**: zero CLI/JSON sync — no new irregular flags, input/output
-JSON unchanged. One semantic note: solutions may now contain empty bins (see
-above). Rebuild + re-bundle `packingsolver_irregular.exe` (done for this bump).
-
----
-
-## MARK: Recent Upstream Changes (2026-06-27 → 2026-06-30)
-
-Pulled `c2c1f1f42` → `8ea3129e6` (7 commits). Bundled binary rebuilt + re-bundled.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `e72df6672` | irregular, rectangle: `leftover_corner` → `leftover_mode` for BinPackingWithLeftovers | **API + CLI + JSON breaking.** Enum `Corner` → `LeftoverMode`, gains edge modes `Left`/`Right`/`Bottom`/`Top`; instance JSON key `leftover_corner` → `leftover_mode`; CLI flag `--leftover-corner` → `--leftover-mode`. Output JSON unchanged (`LeftoverValue` preserved). |
-| `39a0b5a67` / `54766c85f` | rectangleguillotine: `sort_subplates` post-processing | Other domain — not reachable from `packingsolver_irregular`. |
-| `7e43cca72` / `8ea3129e6` | Update `shape` / `knapsacksolver` deps | Build only. |
-| `813ab4a3d` | rectangleguillotine: rename test data dirs | Data only. |
-| `34ef5edd5` | Fix CGH label in `column_generation_strips_horizontal` | Log label only. |
-
-**Wrapper impact**: rename-only sync, breaking for callers → v0.6.0. `Corner` →
-`LeftoverMode` (+4 edge values), `Parameters.leftover_corner` → `leftover_mode`,
-`set_leftover_corner()` → `set_leftover_mode()`, `SolverParams.leftover_corner`
-→ `leftover_mode` (`--leftover-mode`), instance JSON key `leftover_corner` →
-`leftover_mode`. Rebuild + re-bundle `packingsolver_irregular.exe`.
-
----
-
-## MARK: Recent Upstream Changes (2026-06-17 → 2026-06-27)
-
-Pulled `da2af179b` → `c2c1f1f42` (30 commits). Bundled binary rebuilt + re-bundled.
-
-Mostly an internal refactor: `branching_scheme*` files renamed to `tree_search*`
-and each domain gained `tree_search()` / `tree_search_maximal_spaces()` wrappers
-that simplify `optimize.cpp`. New algorithms (`tree_search_maximal_spaces`,
-rectangleguillotine block-generation rewrite, cut-thickness) land in **other
-domains** — the wrapper ships only `packingsolver_irregular`, so they aren't
-reachable. Irregular gained the integrated `sequential_feasibility` path.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `dbed14598` | irregular: integrate `sequential_feasibility` into tree/local search | **CLI breaking.** The 4 `--*sequential-feasibility*` toggles were **removed** — it now runs automatically inside tree_search/local_search. Wrapper drops `use_sequential_feasibility` + the 3 `sequential_feasibility_use_*` fields. |
-| `6f32dca63` / `a9da85f9a` | SolutionPool labels + `update_bounds` | Internal. `algorithm_formatter` output JSON keys (3 top / 16 `Output.Solution`) **unchanged** — wrapper parsing untouched. |
-| `843dd8d85` | irregular: add `tree_search()`, simplify `optimize.cpp` | Internal restructure, same auto-selection. The 4 `*-subproblem-queue-size` flags **renamed** → `*-subproblem-tree-search-queue-size`. Wrapper fields + flag strings renamed to match. |
-
-**Wrapper impact**: CLI-only sync (no JSON-format change). Removed 4 dead
-`sequential_feasibility` knobs; renamed 4 `*_subproblem_queue_size`
-→ `*_subproblem_tree_search_queue_size`. Input/output JSON byte-structurally
-unchanged. Default/auto solves unaffected. Rebuild + re-bundle
-`packingsolver_irregular.exe` (done for this bump).
-
----
-
-## MARK: Recent Upstream Changes (2026-05-07 → 2026-06-17)
-
-Pulled `713d0dbea` → `da2af179b` (7 commits). Bundled binary rebuilt + re-bundled.
-
-| Commit | Change | Impact |
-|---|---|---|
-| `f0fd6a599` | **irregular: widen ID types + input-scale overflow guards** | **C++ robustness — the reason to rebuild.** `ItemTypeId` / `GroupId` / `BinTypeId` / `DefectId` widened `int16_t`→`int32_t` (cap 32767 → ~2.1B). `InstanceBuilder::build()` now throws a clean `runtime_error` on `ItemPos`/`BinPos` overflow (cap 100M bins) instead of silently wrapping → `0xC0000005` access-violation crash. Directly hardens the crash class seen in `_crashes/`. No API change. |
-| `c00753cd7` | **Add memory resource limits (default unlimited) (#384)** | New CLI flag `--memory-limit <MiB>` (`Megabytes`, default `0` = unlimited). Exposed in wrapper as `SolverParams.memory_limit_megabytes` (`None`/`0` = unlimited). Opt-in OOM guard. |
-| `25c10a736` | Integrate `write_json_output` parameter | Passing `--output` now sets `write_json_output = true`, gating the metrics JSON (`Parameters` / `IntermediaryOutputs` / `Output`) behind it. Wrapper always passes `--output`, so the metrics file is **byte-structurally unchanged** (verified old-vs-new: same 3 top keys, same 16 `Output.Solution` keys). Perf-only when `--output` omitted. Backward compatible. |
-| `0d6f163e2` | Move `thread_pool.hpp` to `src/` + consolidate wrapper | Internal — irregular `optimize.cpp` now launches its algorithms via a shared `thread_pool` / `run(tasks, parallel?)`. Dead `wrapper`/`wrapper_impl` template removed from `common.hpp`. Same algorithm auto-selection + priority order preserved. No API change. |
-| `f51d49843` | Refactor stack building code | rectangleguillotine internal — no irregular impact. |
-| `1069025e5` | Implement `set_number_of_stages_unlimited` | rectangleguillotine `instance_builder` — no irregular impact. |
-| `da2af179b` | Add `dynamic_programming_infinite_copies_array` algorithm | **rectangleguillotine-only new algorithm** — the wrapper ships only `packingsolver_irregular`, so it is not reachable and not adopted. |
-
-**Wrapper impact**: one additive change — `SolverParams.memory_limit_megabytes` → `--memory-limit`. New upstream algorithms are all rectangleguillotine; the irregular module gained only robustness (ID widening, overflow guards) + the memory limit. Rebuild + re-bundle `packingsolver_irregular.exe` to get the crash hardening (done for this bump).
-
----
-
-## MARK: Recent Upstream Changes (2026-05-05 → 2026-05-07)
-
-| Commit | Change | Impact |
-|---|---|---|
-| `dd4691ae5` | Update benchmark instances | Data only — no code/API change. |
-| `a4e76786c` | Add missing `add_end_boolean` | C++ stability — propagates the algorithm-end boolean to SVC / SSK / dichotomic / CG sub-solver `Parameters.timer`. Means time-limit / clean-shutdown signals now reliably reach the inner solvers (the exact algos VSBP auto-selects). No API change. |
-| `939d4580a` | Fix small items in `optimize_onedimensional_bound` | Bugfix in onedimensional module — no impact on irregular wrapper. |
-| `c56e42a4e` | Add `sofa_structure_r180` instance | Data only. |
-| `729495829` | Improve rotations for shapes with many candidates | C++ perf — auto-applies. For items that generate >512 candidate `(angle, mirror)` pairs, dedupes by `angular_distance >= 1°` instead of `equal()`. Helps continuous-rotation perf for complex outlines (notches/holes). No API change. |
-| `8b83b5a82` | Update shape dependency | Build only — pulls newer `shape` lib. May further refine NFP / convex-hull FP behavior on top of the prior `10a5db6ae` bump. |
-| `32eb77c38` / `8edde4ea3` | Improve visualizers | Tooling only. |
-| `c9561c63a` | Update `requirements.txt` | Build only. |
-| `5abcd68ae` | Update images | Docs only. |
-
-**Wrapper impact**: zero. No Python source edits required for this bump. Just rebuild `extern/packingsolver/build` (target `PackingSolver_irregular_main`) and copy `packingsolver_irregular.exe` into `python/pyckingsolver/bin/`.
-
----
-
-## MARK: Recent Upstream Changes (2026-04-06 → 2026-05-05)
-
-| Commit | Change | Impact |
-|---|---|---|
-| `5b1006cc8` | Improve free rotations for large items | C++ perf — auto-applies, no API change. Big NFP-precision win for continuous rotations. |
-| `4d72a55e8` | Restore filter in `compute_item_type_rotations` | Bugfix |
-| `dd78c9b54` | `--output` PNG export in visualizer scripts | Tooling only |
-| `0562eeae5` | **Add fixed items** | New API (see Bin Type Fields + Fixed Items section) |
-| `16732ff17` | Move utils to `utils.hpp` | Internal refactor |
-| `98daf10ab` | Update `mathoptsolverscmake` dep | Build only |
-| `9e4b3a80c` | Update visualizers | Tooling only |
-| `d40e0ea15` | Add `GROUP_ID` column in certificate files | Output/certificate metadata |
-| `f03e5cf1d` | Fix maximum weight default value | Bugfix |
-| `10a5db6ae` | Update shape dependency | Build only — pulls newer `shape` lib (geometry primitives + convex hull). May affect FP behavior of NFP / convex_hull crashes seen previously. |
-| `daa35a121` | Add missing try/catch in solver mains | Stability — solver mains now catch C++ exceptions and exit cleanly instead of aborting. |
-| `1528db6ea` | Fix `--anchor` option in irregular main | Bugfix — `--anchor 0` now correctly **disables** anchor. Previously `vm.count("anchor")` made any presence enable it; now reads `vm["anchor"].as<bool>()`. Wrapper already worked around this by omitting the flag when false; still compatible. |
-| `d2817d362` | Rename `aabb` → `aabb_unscaled`/`aabb_scaled` in irregular bin type | Internal refactor — no API/JSON change. |
-| `ae4ad3ae7` | Implement `item_shape_scaled`/`orig` methods | Internal refactor — no API/JSON change. |
-| `67f8f9fe3` | Use `AxisAlignedBoundingBox` in `Solution::write_svg` | Internal refactor (SVG export). |
-| `8196e008c` | Fix leftover value computation | C++ bugfix — `LeftoverValue` JSON key preserved, values now correct (uses orig coords, scaled stored separately). |
-| `a5e35a440` | Fix typo (`open_dimension_xy_areaarea` → `open_dimension_xy_area`) | Bugfix in solution method name; wrapper does not consume this key, no impact. |
-| `a555eb2d3` | Separate `leftover_value_` into `leftover_value_orig_`/`scaled_` | Internal refactor; JSON output unchanged (`LeftoverValue` still emitted from `leftover_value_orig()`). |
-
-**Action required to use new features**: rebuild the bundled C++ binary (`cmake --build extern/packingsolver/build`). Wrapper changes alone don't pull in C++ updates — `pyckingsolver/bin/packingsolver_irregular.exe` must be rebuilt and re-bundled.
-
----
-
-## MARK: v0.2.0 Breaking Changes
-
-- **`AllowedRotation` is now a dataclass** with `(start_angle, end_angle, mirror)` matching upstream's per-rotation mirror flag. Replaces the legacy `(start, end)` 2-tuple + separate `allow_mirroring` item-level bool. Old kwargs still work for back-compat — the builder normalizes all input forms via `_normalize_rotations()`.
-- **`SolverParams` dataclass** groups all 30+ solver knobs. Pass via `Solver.solve(instance, params=SolverParams(...))` or as kwargs (kwargs override `params`).
-- **`nest()` high-level helper** in new `nest.py` module: WKB-based identical-shape grouping + spacing pre-buffer + bottom-left origin anchoring + builder + solver in one call. General-purpose (not tied to any specific use case).
-- **`Solution.metrics`** is now populated from the solver's `--output` JSON (BinCost, FullWastePercentage, DensityX, etc.).
-- **`json_output=`** replaces the old `output_path=` kwarg on `Solver.solve()`.
-- **`cancel=`** (0.6.1) on `Solver.solve()`: Event-like (`.is_set()`); set → subprocess killed (0.25s poll), raises `SolverCancelled` (subclass of `RuntimeError`).
-- **`None` return** (0.6.6) from `Solver.solve()` / `nest()`: no certificate within the budget (too-tight bin, `first_solution_timeout`) is an answer, not an error. Only a non-zero exit raises `RuntimeError` + dumps to `_crashes/`.
-- **`stall_timeout` / `first_solution_timeout`** (0.6.5) on `SolverParams`: watch the streaming certificate file and kill the solve once it stops improving (or never started), making `time_limit` a ceiling rather than a fixed cost. Either one forces `only_write_at_the_end=False`; the best certificate is kept, so a stall-kill is a success, not an error.
-- **`_extra` forward-compat dicts re-added to all JSON-touching dataclasses** (`Parameters`, `BinType`, `Defect`, `FixedItem`, `ItemShape`, `ItemType`, `AllowedRotation`, `SolutionItem`, `SolutionBin`). Unknown keys from upstream JSON are stashed in `obj._extra` and re-emitted by `to_dict()`. This is the safety net so users can keep working when upstream adds fields before we update the wrapper.
-- New module layout adds `nest.py`. `solver.py` now contains both `Solver` and `SolverParams`.
-
----
-
-## MARK: Python Feature Support (Irregular Pack)
-
-### Geometry Primitives
-| Feature | Python | C++ | Notes |
-|---|---|---|---|
-| Rectangle | ✅ | ✅ | `add_bin/item_type_rectangle()` |
-| Circle | ✅ | ✅ | `add_bin/item_type_circle()` |
-| Polygon (vertices) | ✅ | ✅ | Shapely `Polygon` |
-| Polygon with holes | ✅ | ✅ | Shapely interior rings |
-| General (LineSegment + CircularArc) | ✅ | ✅ | `elements_to_shapely()` |
-| MultiPolygon | ✅ parse | ✅ | Parsed in solution; serialized as multi-shape items |
-
-### Item Type Fields
-| Field | Python | C++ | Notes |
-|---|---|---|---|
-| `shapes` (multi-shape items) | ✅ | ✅ | `list[ItemShape]` |
-| `profit` | ✅ | ✅ | |
-| `copies` | ✅ | ✅ | |
-| `allowed_rotations` (discrete + continuous + per-mirror) | ✅ | ✅ | `list[AllowedRotation]` — each entry is `(start_angle, end_angle, mirror)`. Builder also accepts `(s,e)` 2-tuples and bare floats. |
-| `allow_mirroring` (back-compat) | ✅ | — | Wrapper-only convenience: duplicates each rotation entry with `mirror=True`. Upstream native field is per-rotation `mirror`. |
-| `quality_rule` (per shape) | ✅ | ✅ | `ItemShape.quality_rule` |
-
-### Bin Type Fields
-| Field | Python | C++ | Notes |
-|---|---|---|---|
-| `shape` | ✅ | ✅ | |
-| `cost` | ✅ | ✅ | |
-| `copies` / `copies_min` | ✅ | ✅ | |
-| `item_bin_minimum_spacing` | ✅ | ✅ | |
-| `defects` | ✅ | ✅ | Full defect support |
-| `fixed_items` | ✅ | ✅ | **NEW** — pre-placed items inside the bin type |
-
-### Defect Fields
-| Field | Python | C++ | Notes |
-|---|---|---|---|
-| `shape` (with holes) | ✅ | ✅ | |
-| `defect_type` | ✅ | ✅ | |
-| `item_defect_minimum_spacing` | ✅ | ✅ | |
-
-### Parameters
-| Field | Python | C++ | Notes |
-|---|---|---|---|
-| `item_item_minimum_spacing` | ✅ | ✅ | |
-| `open_dimension_xy_aspect_ratio` | ✅ | ✅ | |
-| `leftover_mode` | ✅ | ✅ | `LeftoverMode` enum (4 corners + 4 edges) |
-| `quality_rules` | ✅ | ✅ | `list[list[int]]` |
-| `scale_value` | ❌ | ✅ | Auto-computed in C++ `build()`, not in JSON |
-
-### Objectives
-The 8 objectives irregular solves: `KNAPSACK`, `BIN_PACKING`, `BIN_PACKING_WITH_LEFTOVERS`, `OPEN_DIMENSION_X`, `OPEN_DIMENSION_Y`, `OPEN_DIMENSION_XY` (aspect ratio required), `VARIABLE_SIZED_BIN_PACKING`, `FEASIBILITY`. `OpenDimensionZ` and the sequential 1D subproblem throw in irregular, so 0.9.0 dropped them.
-
-### Solver CLI Parameters
-| Parameter | Python | C++ CLI | Notes |
-|---|---|---|---|
-| `time_limit` | ✅ | ✅ | |
-| `verbosity_level` | ✅ | ✅ | |
-| `memory_limit_megabytes` | ✅ | ✅ | NEW (`--memory-limit`, MiB). `None`/`0` = unlimited. Opt-in OOM guard. |
-| `optimization_mode` | ✅ | ✅ | Anytime / NotAnytime / etc. |
-| `use_tree_search` | ✅ | ✅ | |
-| `use_local_search_linear_programming` / `_direct_trigonometry` | ✅ | ✅ | Local search engines (replace `use_local_search` in 0.10.0). The nonlinear and black-box engines need Knitro, which the wheel lacks. |
-| `use_tree_search_maximal_spaces` / `use_tree_search_relative_positions` / `use_benders_decomposition` | ✅ | ✅ | NEW in 0.10.0 |
-| `use_milp_raster` | ✅ | ✅ | NEW — MILP raster algorithm |
-| `use_sequential_single_knapsack` | ✅ | ✅ | |
-| `use_sequential_value_correction` | ✅ | ✅ | |
-| `use_column_generation` | ✅ | ✅ | |
-| `use_dichotomic_search` | ✅ | ✅ | |
-| `reduce` | ✅ | ✅ | NEW — instance reduction (preprocessing). Upstream default is on. |
-| `linear_programming_solver` | ✅ | ✅ | "CLP" or "Highs" |
-| `anchor` | ✅ | ✅ | Post-processing (renamed from `anchor_to_corner`) |
-| `anchor_x_weight` | ✅ | ✅ | Horizontal slide weight (+left, -right, 0=off) |
-| `anchor_y_weight` | ✅ | ✅ | Vertical slide weight (+bottom, -top, 0=off) |
-| `item_item_minimum_spacing` (CLI override) | ✅ | ✅ | |
-| `item_bin_minimum_spacing` (override) | ✅ | ✅ | `main.cpp` never reads the flag: the wrapper writes it into every bin |
-| `leftover_mode` (CLI override) | ✅ | ✅ | |
-| `bin_unweighted` | ✅ | ✅ | |
-| `unweighted` | ✅ | ✅ | |
-| `continuous_rotations` | ✅ | ✅ | NEW — set all items to continuous rotation |
-| `seed` | ✅ | ✅ | Currently unused by solver |
-| `only_write_at_the_end` | ✅ | ✅ | |
-| `group_identical_bins` | ✅ | ✅ | NEW — post-processing to merge identical bins |
-| All tuning params (approx ratio, queue sizes, etc.) | ✅ | ✅ | All `not_anytime_*`, ratio and queue knobs |
-| `extra_args` | ✅ | — | Forward-compat escape hatch |
-| `max_cores` | ✅ | — | CPU affinity limit (Linux/Docker/Windows) |
-
-### C++ Internal-Only (NOT exposed as CLI)
-These exist in `OptimizeParameters` but have **no CLI flag** — cannot be set from Python:
-- `use_open_dimension_sequential`
-- `tree_search_guides`
-- `many_items_in_bins_threshold`
-- `many_item_type_copies_factor`
-
-### Solution Output
-| Feature | Python | C++ | Notes |
-|---|---|---|---|
-| Bin shape / defects | ✅ | ✅ | Parsed as Shapely |
-| Item placement (x, y, angle, mirror) | ✅ | ✅ | Angles in degrees |
-| Item shapes (transformed) | ✅ | ✅ | `get_placed_shapely()` |
-| `is_fixed` flag on items | ⚠️ | ✅ | **NEW** field; wrapper parses it, but C++ JSON solution writer currently omits it (in-memory only). Detect fixed placements by matching against `BinType.fixed_items` instead. |
-| Metrics (waste, density, cost, etc.) | ✅ | ✅ | 16+ metric keys |
-| Round-trip JSON | ✅ | — | `Instance.to_dict/from_dict`, `Solution.to_dict/from_dict`. All known fields preserved. |
-
----
-
-## MARK: Architecture
+## MARK: Layout
 
 ```
 python/pyckingsolver/
-├── __init__.py       # Public API re-exports + __version__
-├── types.py          # Dataclasses + enums (Objective, LeftoverMode, AllowedRotation, FixedItem, …)
-├── geometry.py       # Shapely ↔ PackingSolver JSON conversion
-├── instance.py       # Instance (immutable) + InstanceBuilder (fluent)
-├── solution.py       # Solution parsing + Shapely transform + mark_fixed_items()
-├── solver.py         # Subprocess wrapper for C++ binary + SolverParams dataclass
-└── nest.py           # nest() high-level helper (grouping + pre-buffer + anchoring)
+├── __init__.py   # re-exports, __version__
+├── instance.py   # enums, InstanceBuilder (writes the instance JSON), Instance
+├── solve.py      # OptimizeParameters, optimize() (subprocess + poll loop), Output, Solution
+├── shape.py      # build_* helpers, Shapely <-> upstream shape JSON
+└── bin/          # the bundled binary (gitignored); else packingsolver_irregular on PATH
+test/test_pyckingsolver.py   # the checks
+extern/packingsolver/        # upstream; the CLI is src/irregular/main.cpp
 ```
 
-- **Angles**: Degrees everywhere (C++ JSON input/output, Shapely rotation).
-- **Shapes**: Shapely `Polygon` with interior rings for holes; `MultiPolygon` for multi-part.
-- **Binary search**: `Solver._find_binary()` checks bundled `bin/`, `PATH`, submodule build paths.
-- **Crash recovery**: On non-zero exit, saves input JSON to `python/pyckingsolver/_crashes/crash_{code}.json` (gitignored, OSError-safe for read-only filesystems).
-- **No more `_extra` dicts** as of 0.2.0 — wait, scratch that: `_extra` was reinstated as a forward-compat safeguard. See `## v0.2.0 Breaking Changes`.
+## MARK: Wire format
 
----
+- The instance JSON (what `instance_builder.cpp::read` parses) is the single representation:
+  `InstanceBuilder` writes it directly, `Instance.data` is that dict, `read()` / `write()` round trip
+  it. Ids are the order of the `add_*` calls; `build()` resets the builder.
+- Every shape goes out as `type:"polygon"`, every ring counter-clockwise (holes too), no closing
+  vertex, Z dropped. Arcs are polylined: `build_circle` is a 64-gon (`ARC_SEGMENTS`).
+- Upstream reads a bin as a plain `Shape`, so its holes would be dropped: `add_bin_type` sends the
+  exterior and each hole as a defect (type -1) with `item_bin_minimum_spacing` as its spacing.
+- Unset values are left out and upstream fills them: profit and bin cost are the area, `copies` 1,
+  item `copies_min` -1 resolves to 0 under Knapsack and to `copies` otherwise (any other value outside
+  Knapsack throws in `build()`), no rotations means `(0, 0, False)`, a fixed item's angle/mirror 0/false.
+- Resources (`add_bin_type_resource`, `add_resource_consumption`) are read from the JSON since
+  `8b083c66`; a capacity-3 resource caps a knapsack at 3 copies (measured).
+- Pose: an item is mirrored about the y axis, turned `angle` degrees about the origin, then moved to
+  `bl_corner`. Certificate items also carry their placed shapes, which `shape_scaled` reads. Fixed items
+  come back with the packed ones; `is_fixed` matches a pose to the bin type's `fixed_items`.
 
-## MARK: Key API Patterns
+## MARK: OptimizeParameters to CLI flags (`solve.py::_flags`)
 
-### Cost Defaults
-- `BinType.cost = -1.0` → solver uses **area as cost** automatically.  
-  Don't pass `cost=w*h` manually — let the solver optimize natively.
-- `ItemType.profit = -1.0` → solver uses **area as profit** (for KNAPSACK).
+- Each field outside `_NOT_FLAGS` that is not None becomes `--field-name` (kebab case); bools go as
+  `1`/`0`, enums by value. Four renames (`_RENAMED`): `log_path` `--log`, `json_search_tree_path`
+  `--json-search-tree`, `memory_limit_megabytes` `--memory-limit`, `linear_programming_solver_name`
+  `--linear-programming-solver`. None keeps the binary's default.
+- Always sent: `--input`, `--certificate`, `--output`, `--verbosity-level` (0), and `--time-limit` when
+  finite. `linear_programming_solver_name` defaults to `Highs`: upstream's default is CLP, which the
+  build leaves out, and a run that needs an LP then fails "no linear programming solver found".
+- `reduction_parameters.reduce` None sends nothing, except `--reduce 0` when any bin type has fixed
+  items: reduction merges identical item types and a pinned merged type throws "fixed item type id not
+  found in sub-instance mapping" (measured on `8b083c66`: exit 1 with reduce on, solves with it off).
+- Any `use_*` set True skips upstream's automatic selection (`optimize.cpp`), so only the chosen
+  algorithms run. False equals None (every upstream default is false).
+- `group_identical_bins` and `anchor` are applied by `main.cpp` after `optimize`, to the final
+  certificate only. `main.cpp` tests `--group-identical-bins` by presence, so False still groups.
+- Builder-side CLI options (objective, spacings, leftover, unweighted, continuous rotations) are never
+  sent; the builder writes them into the JSON. `--item-bin-minimum-spacing` is declared but `main.cpp`
+  never applies it; the per-bin JSON field works. Dead options: `log2stderr` (`main.cpp` reads
+  `log-to-stderr`) and `only-write-at-the-end` (the stream needs every certificate).
+  `test_every_cli_option_is_reachable` fails on any drift between `main.cpp` and these sets.
 
-### Copies (Identical Items)
-```python
-# BAD: one item type per copy
-for gi in gis:
-    b.add_item_type(poly, copies=1)  # N item types → slow
+## MARK: Streaming, watchdog, callback (`solve.py::_run`)
 
-# GOOD: group identical items, one type with copies=N
-b.add_item_type(poly, copies=N)  # 1 item type → fast
-```
-Group by `poly.wkb` to detect identical shapes.
+- `main.cpp`'s callback writes the output JSON, then the certificate, on each new best solution
+  (`Solution::write`: truncate, `setw(4)` JSON, newline; an empty solution is `null`). A file caught
+  mid-rewrite is empty or cut, so text counts as a layout only when it ends with `\n}\n`.
+- One 50 ms poll loop: a `stat()` per poll, a read only when mtime or size moved. Progress is a complete
+  layout whose text differs from the last one (bound updates rewrite the same layout), dated by the
+  file's mtime clamped to at most 1 s back.
+- `new_solution_callback(output)` runs on the calling thread inside that loop (a slow callback delays
+  the kills), once per new layout, plus once at exit if the final certificate differs (e.g. after
+  `anchor`). Its `Output` pairs the certificate with the output JSON's last `IntermediaryOutputs`
+  entry, so metrics and bounds are provisional (0 and None if that file was caught mid-write).
+- Stops: `stall_timeout` s after the last new layout, `first_solution_timeout` s with none, and
+  `time_limit + 30` s as a hard deadline. Each kills the binary and returns a normal `Output` built from
+  the last complete certificate read, never the file on disk. `cancel.is_set()` kills it and raises
+  `OptimizeCancelled`. A non-zero exit raises RuntimeError with the binary's output. Any exception or
+  Ctrl+C kills the child.
+- Nothing found: an `Output` whose solution has 0 bins. Infeasible: `output.is_proven_infeasible`.
+  `is_proven_optimal()` compares solution value and bound in Python; it is False for Feasibility,
+  leftovers, OpenDimensionXY and an empty solution (upstream also counts a proven-infeasible run and
+  the knapsack goal).
 
-### Spacing Strategy
-Use the native `item_item_minimum_spacing` flag. It holds a true 1x gap and leaves
-item geometry untouched, so holes keep their full area and no corner gets rounded.
+## MARK: Upstream limits (measured on the `8b083c66` binary)
 
-### Hole-Aware Nesting
-For items with holes where smaller items should nest inside:
-- Keep holes via `min_hole_area=0` in prep
-- Try hole-aware first → fallback to hole-stripped
+- **A pinned item's holes can stay empty.** A 150x100 KNAPSACK bin with a pinned 150x100 plate (four
+  R=12 holes) and 8 R=8 discs, tree search, places 0 discs at the default approximation ratio and 4 at
+  `initial_maximum_approximation_ratio=0.01`. Cause: the coarse first pass shrinks the holes below every
+  disc, the beam search has nothing to branch on and reports optimal, and `tree_search.cpp` breaks on
+  `if (ibs_output.optimal) break;` before refining the ratio. A patch breaking only when
+  `ibs_output.optimal && maximum_approximation_ratio <= min_ratio`, built on `be6c3192`, filled all 4.
+- **"face area is not positive".** The 2.6x3.4 mm "N" polygon
+  `[[0,3.43],[1.95,1.27],[1.95,3.4],[2.63,3.41],[2.62,0.02],[0.65,2.18],[0.66,0.04],[0.03,0]]`, 17
+  copies, spacing 3, bin 2000x1000, 4 rotations, KNAPSACK: exit 1 with that message; 16 copies solve.
+- **KNAPSACK cannot leave a wasteful arrangement.** Tree search builds along a skyline, so a gap
+  enclosed by two later parts is never refilled. 700x450 bracket/disc example: profit 70, against 71
+  found by forcing the dropped type with `copies_min`, the only lever measured.
+- **Periodic packing** (source, `optimize.cpp`): on one bin, auto-selection runs it once item types with
+  more than 16 copies cover over 80% of the free bin area or of the item area; tree search runs beside
+  it only when fewer than 64 items fit. So pass identical parts as one type with `copies=N`.
+- `set_item_item_minimum_spacing` is the true gap between items (checked); never pre-buffer shapes.
 
-### Fixed Items (incremental nesting)
+## MARK: Upstream features the CLI cannot reach
 
-NEW since commit `0562eeae5`. Pre-place items in a bin type; the solver packs the rest **around** them. Applies to **every** bin of that type (including `copies > 1`).
+Not set by `main.cpp` (verify against it after a submodule move): `tree_search_guides`,
+`many_items_in_bins_threshold`, `many_item_type_copies_factor`, `periodic_packing_copies_threshold`,
+`periodic_packing_max_items_threshold`, `post_process`,
+`benders_decomposition_subproblem_tree_search_queue_size`,
+`not_anytime_benders_decomposition_number_of_iterations`, `maximum_size_of_the_solution_pool`,
+`mps_prefix`, `log_to_stderr`. Quality rules exist only through C++ `add_quality_rule`; the JSON reader
+has no key for them. The Knitro engines and `use_global_nonlinear_programming` (SCIP) need solvers the
+build leaves off (CMake defaults).
 
-```python
-b = InstanceBuilder(Objective.VARIABLE_SIZED_BIN_PACKING)
-bin0 = b.add_bin_type_rectangle(2400, 1200, copies=5)
-item0 = b.add_item_type_rectangle(800, 400, copies=10)
-# Lock one copy of item0 at (100, 100) inside every copy of bin0:
-b.add_fixed_item(bin0, item0, bl_corner=(100, 100), angle=0, mirror=False)
-sol = Solver().solve(b.build(), time_limit=30)
-for it in sol.bins[0].items:
-    if it.is_fixed:
-        ...  # came from bin's fixed_items
-```
+## MARK: Building the binary
 
-Use cases:
-- **True compaction**: lock low-fill plates' good placements, re-solve to compact.
-- **Reserved areas**: dummy item types representing tooling/clamps.
-- **Manual override**: user drags a piece in UI → lock and re-solve the rest.
-- **Incremental nesting**: lock confirmed plates, re-solve only the remainder with smaller stock.
-
-Gotchas:
-- `bl_corner` is the **bottom-left of the item's axis-aligned bounding box** post-rotation, in bin coordinates.
-- The item type still consumes a copy from `copies`. To force exactly N fixed copies and zero free copies, set `copies=N`.
-- Solver does **not** validate that fixed items don't overlap each other or the bin boundary — caller's responsibility.
-- C++ honors fixed placements at solve time, but the JSON solution writer currently does **not** emit the `is_fixed` flag. So `SolutionItem.is_fixed` will always be `False` after parsing. To know which placement was a fixed one, match `(item_type_id, x, y, angle, mirror)` against `inst.bin_types[i].fixed_items`.
-
----
-
-## MARK: Known Binary Bugs
-
-- **Default LP solver MUST be HiGHS, not CLP, for HiGHS-only builds.** The wrapper now defaults `SolverParams.linear_programming_solver = "Highs"`. The upstream C++ default in `optimize.hpp` is `SolverName::CLP`; when CLP isn't compiled in (e.g. all CI wheels, since CLP prebuilt is x86_64-only), running with the default (or `--linear-programming-solver CLP`) crashes with `STATUS_STACK_BUFFER_OVERRUN` (0xC0000409 / SIGABRT) on **any** instance with >1 placeable bin (any objective, any options). Reproduces with the simplest possible JSON: 1 rect item type + 1 rect bin type with `copies=2`. Fix: don't override the wrapper's `Highs` default unless your binary has CLP compiled in.
-- `group_identical_bins=True` was crashing — **FIXED** in solver.py. C++ expects `--group-identical-bins 1` (value required), not bare flag.
-- ~~`inflate()` crashes on complex shapes with holes + non-zero spacing~~ — **FIXED UPSTREAM** in fontanf/shape `abea925` (PR #41, 2026-07-21): `approximate_by_line_segments` picked its arc-extras function from `outer` alone, but the choice also depends on the arc's orientation, so a Clockwise hole arc got the wrong wedge, never cancelled during the union, and survived as a CircularArc into output that then failed `is_polygon()`. Needs a binary built against `abea925` or later.
-- ~~`--anchor 0` still **enables** anchor~~ — **FIXED UPSTREAM** in commit `1528db6ea` (2026-04-28); C++ now reads `vm["anchor"].as<bool>()`. Wrapper still omits the flag when false (no-op now, still correct).
-- **Anchor post-processing (`linear_programming.cpp`) throws `std::logic_error("violated separation constraint")` on many real inputs → process exits 0xC00000FD.** Caused by FP precision: the LP solver returns positions where the post-verification `value` is just below the `-1e-6` tolerance (e.g. `-0.00001`). A previous local try/catch patch around `::linear_programming_anchor()` was **lost during the 2026-05-05 fast-forward pull to commit `a555eb2d3`** (it was never committed, just an in-tree edit). The current bundled binary `pyckingsolver/bin/packingsolver_irregular.exe` (rebuilt 2026-05-05) does **not** have the safety net. **Workaround**: keep `anchor=False` (wrapper default; `stock.py` already uses False). If you need anchor, re-apply the try/catch in `linear_programming_anchor()` (wrap the per-bin call in try { … } catch (std::exception&) { /* keep rigid-shifted solution */ }) and rebuild before flipping it on.
-
----
-
-## MARK: Solver Tuning
-
-### Optimization Modes
-| Mode | Behavior | Use When |
-|---|---|---|
-| `Anytime` (default) | Progressive: queue 1→∞, improves over time | Default for VSBP |
-| `NotAnytime` | Single pass, queue=512 | Quick result, hole-aware |
-| `NotAnytimeDeterministic` | Same, deterministic | Reproducible results |
-| `NotAnytimeSequential` | Single-threaded | Debugging / crash avoidance |
-
-### Algorithm Auto-Selection (VSBP)
-
-**CRITICAL**: setting **any** `use_*` algorithm flag to `True` **disables auto-selection** entirely (see `optimize.cpp` line 765 — auto only fires when ALL flags are false). To get the right algorithm combo, leave them all unset.
-
-Auto-selection logic (irregular VSBP, simplified — `optimize.cpp` line ~860):
-```
-if mean_item_type_copies > many_item_type_copies_factor * mean_items_in_bins:
-    if mean_items_in_bins > many_items_in_bins_threshold (16):
-        SSK
-    else:
-        SVC + CG
-else:  # few copies per type — typical CAD nesting
-    if mean_items_in_bins > 16:
-        SSK + dichotomic_search   # ← 100+ unique parts case
-    else:
-        SVC + CG
+```bash
+cd extern/packingsolver
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPACKINGSOLVER_BUILD_TEST=OFF -DPACKINGSOLVER_USE_CLP=OFF
+cmake --build build --target PackingSolver_irregular_main
+cp build/src/irregular/packingsolver_irregular[.exe] ../../python/pyckingsolver/bin/
 ```
 
-For typical CAD nesting (100+ unique parts, copies=1, items fit ~20+ per bin):
-- Auto picks **SSK + dichotomic_search**.
-- Manually setting `use_sequential_single_knapsack=True` alone runs SSK **without** dichotomic → solver returns no bins on big inputs (~50s timeout, 0 placed). This is a real production bug we hit.
-- Fix: pass NO `use_*` flags. Only set `time_limit`, `optimization_mode`, `linear_programming_solver`, `group_identical_bins`, `anchor`. Let auto-select work.
+Windows: run it after MSVC BuildTools `vcvars64.bat`, with Ninja on PATH. Linux also needs
+`ninja-build liblapack-dev libbz2-dev`. `-DPACKINGSOLVER_USE_CLP=OFF` is load bearing (licence, ARM
+linking), hence the `Highs` default. CI builds `win_amd64`, `manylinux_2_39_x86_64`,
+`manylinux_2_39_aarch64` and `macosx_15_0_arm64` wheels, retagged with `uvx wheel tags`.
 
-### Bin Cost & Material Minimization
-- `BinType.cost = -1.0` (default) → C++ sets `cost = bin_area` (`instance_builder.cpp` line 58).
-- VSBP minimizes total cost = total used bin area = total material used. **No need to write greedy FFD or sheet-selection logic in Python** — VSBP handles cost-optimal multi-sheet selection natively when fed multiple bin types.
+After moving the submodule: rebuild, re-bundle, diff `main.cpp`'s options and `optimize.hpp`'s
+`OptimizeParameters` against `solve.py`, and run the checks.
 
-### Speed Levers
-1. Group identical items via `copies=N` (critical)
-2. `NotAnytime` mode (single pass)
-3. Limit rotations: `[(0,0),(90,90)]` not continuous
-4. `anchor=False` (skip LP post-processing)
-5. Pre-buffer spacing in Python → `spacing=0` to C++
+## MARK: Checks
 
-### Quality Levers
-1. `Anytime` mode (progressive improvement)
-2. `anchor=True` with `anchor_x_weight=1.0, anchor_y_weight=1.0`
-3. More time → larger queue sizes in Anytime
-4. `linear_programming_solver="Highs"` (better LP)
-5. Continuous rotations `[(0,360)]` (if acceptable). Free-rotation NFP precision was significantly improved in commit `5b1006cc8` for large items — expect tighter packings vs. older builds.
-
-### Tuning Knobs (rarely needed — defaults are good)
-| Param | Default | What |
-|---|---|---|
-| `many_items_in_bins_threshold` | 16 | Switches between SSK/SVC paths in auto-select. **Not exposed via CLI** — can't override. |
-| `many_item_type_copies_factor` | 1 | Same. Not exposed. |
-| `initial_maximum_approximation_ratio` | 0.20 | NFP approximation. Lower = more accurate, slower. |
-| `not_anytime_tree_search_queue_size` | 512 | Tree search beam width in NotAnytime mode |
-| `not_anytime_sequential_single_knapsack_subproblem_tree_search_queue_size` | 512 | SSK subproblem beam |
-| `not_anytime_dichotomic_search_subproblem_tree_search_queue_size` | 128 | Dichotomic search beam |
-| `not_anytime_local_search_maximum_number_of_failed_separations` / `_moves_factor` | | Local search caps (non-Anytime); replace `..._iterations_without_improvement` in 0.10.0 |
-| `sequential_value_correction_subproblem_tree_search_queue_size` | 128 | SVC inner knapsack beam |
-| `column_generation_subproblem_tree_search_queue_size` | 128 | CG inner knapsack beam |
-
----
-
-## MARK: Quick Reference
-
-```python
-from pyckingsolver import InstanceBuilder, Objective, Solver
-
-# VSBP — multi-bin, cost-optimal (cost=area by default).
-b = InstanceBuilder(Objective.VARIABLE_SIZED_BIN_PACKING)
-for w, h in [(1000, 2000), (1200, 2400), (1500, 3000)]:
-    b.add_bin_type_rectangle(w, h, copies=10)
-for poly, n in shape_groups:  # group identical shapes via wkb
-    b.add_item_type(poly, copies=n,
-                    allowed_rotations=[(0, 0), (90, 90)],
-                    allow_mirroring=False)
-inst = b.build()
-
-# DO NOT pass use_* algorithm flags — they disable auto-selection.
-sol = Solver().solve(
-    inst,
-    time_limit=60,
-    optimization_mode="Anytime",
-    linear_programming_solver="Highs",
-    group_identical_bins=True,
-    anchor=False,  # skip LP post-process (it crashes on real data)
-)
-print(sol.total_item_count(), sol.metrics.get("FullWastePercentage"))
+```bash
+cd test && uv run python test_pyckingsolver.py
 ```
+
+About 14 s: the instance JSON (rings, bin holes as defects, sweeps, read/write), CLI option drift
+(66 options: 51 parameters, 8 builder, 5 wired), holes plus spacing plus pose against the certificate,
+`copies_min`, resources, pins with reduction off, infeasibility, `new_solution_callback` with an early
+stop, cancel, and the watchdog on stand-in child processes.

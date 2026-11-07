@@ -1,408 +1,222 @@
-"""Instance + InstanceBuilder for the irregular packing problem."""
+"""Enums, `InstanceBuilder` and `Instance`, named as in upstream's `packingsolver.irregular`.
+
+The builder writes upstream's instance JSON directly: that JSON is what the binary reads, so it is the one
+representation (no Python mirror of every field to keep in sync).
+"""
 
 from __future__ import annotations
 
-import copy
+import enum
 import json
 from pathlib import Path
 from typing import Any
 
-from shapely.affinity import rotate, scale
 from shapely.geometry import MultiPolygon, Polygon
 
-from pyckingsolver.geometry import (
-    ARC_RESOLUTION,
-    circle_polygon,
-    rectangle_polygon,
-    shape_from_json,
-    shape_to_json,
-)
-from pyckingsolver.types import (
-    AllowedRotation,
-    BinType,
-    Defect,
-    FixedItem,
-    ItemShape,
-    ItemType,
-    LeftoverMode,
-    Objective,
-    Parameters,
-    ShapeLike,
-)
+from pyckingsolver.shape import Shape, ShapeWithHoles
+from pyckingsolver.shapely_adapter import polygon_json
+
+AnyShape = Shape | ShapeWithHoles | Polygon  # a native shape (exact arcs) or a Shapely polygon
+
+
+def _json(shape: AnyShape) -> dict[str, Any]:
+    return polygon_json(shape) if isinstance(shape, Polygon) else shape.to_json()
+
+
+def _outer_and_holes(shape: AnyShape) -> tuple[AnyShape, list[AnyShape]]:
+    if isinstance(shape, Polygon):
+        return Polygon(shape.exterior), [Polygon(r) for r in shape.interiors]
+    return (shape.shape, shape.holes) if isinstance(shape, ShapeWithHoles) else (shape, [])
+
+
+class Objective(str, enum.Enum):
+    """The objectives irregular solves; values are the CLI strings."""
+    BinPacking = "bin-packing"
+    BinPackingWithLeftovers = "bin-packing-with-leftovers"
+    OpenDimensionX = "open-dimension-x"
+    OpenDimensionY = "open-dimension-y"
+    OpenDimensionXY = "open-dimension-xy"
+    Knapsack = "knapsack"
+    VariableSizedBinPacking = "variable-sized-bin-packing"
+    Feasibility = "feasibility"
+
+
+class LeftoverMode(str, enum.Enum):
+    BottomLeft = "BottomLeft"
+    BottomRight = "BottomRight"
+    TopLeft = "TopLeft"
+    TopRight = "TopRight"
+    Left = "Left"
+    Right = "Right"
+    Bottom = "Bottom"
+    Top = "Top"
+
+
+class OptimizationMode(str, enum.Enum):
+    Anytime = "Anytime"
+    NotAnytime = "NotAnytime"
+    NotAnytimeDeterministic = "NotAnytimeDeterministic"
+    NotAnytimeSequential = "NotAnytimeSequential"
+    Exact = "Exact"
+
+
+class LinearProgrammingSolver(str, enum.Enum):
+    CLP = "CLP"  # not in the bundled binary (licence): it is built with HiGHS only
+    Highs = "Highs"
+    CPLEX = "CPLEX"
+    Xpress = "Xpress"
+    Knitro = "Knitro"
+
+
+class LocalSearchWeightingScheme(str, enum.Enum):
+    Multiplicative = "multiplicative"
+    Additive = "additive"
 
 
 class Instance:
-    """Immutable problem definition. Build via `InstanceBuilder`."""
+    """A built instance: upstream's instance JSON. Build it with `InstanceBuilder`."""
 
-    def __init__(self, objective: Objective, bin_types: list[BinType],
-                 item_types: list[ItemType], parameters: Parameters | None = None):
-        self.objective = objective
-        self.bin_types = list(bin_types)
-        self.item_types = list(item_types)
-        self.parameters = parameters or Parameters()
+    def __init__(self, data: dict[str, Any]):
+        self.data = data
 
-    def to_dict(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"objective": self.objective.value}
-        params = _params_to_dict(self.parameters)
-        if params:
-            out["parameters"] = params
-        out["bin_types"] = [_bin_to_dict(b) for b in self.bin_types]
-        out["item_types"] = [_item_to_dict(it) for it in self.item_types]
-        return out
+    def objective(self) -> Objective:
+        return Objective(self.data["objective"])
 
-    def to_json(self, path: str | Path | None = None) -> str:
-        text = json.dumps(self.to_dict(), indent=2)
-        if path is not None:
-            Path(path).write_text(text, encoding="utf-8")
-        return text
+    def number_of_bin_types(self) -> int:
+        return len(self.data["bin_types"])
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Instance:
-        return cls(
-            objective=Objective(data["objective"]),
-            bin_types=[_bin_from_dict(b) for b in data.get("bin_types", [])],
-            item_types=[_item_from_dict(i) for i in data.get("item_types", [])],
-            parameters=_params_from_dict(data.get("parameters", {})),
-        )
+    def number_of_item_types(self) -> int:
+        return len(self.data["item_types"])
 
-    @classmethod
-    def from_json(cls, path: str | Path) -> Instance:
-        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+    def to_json(self) -> dict[str, Any]:
+        return self.data
 
-    def fits_some_bin(self, item_type_id: int) -> bool:
-        """Upstream's cheap check: does the item's bounding box, at one of its discrete allowed
-        angles, fit some bin's bounding box? Always True with a continuous rotation range."""
-        it = self.item_types[item_type_id]
-        if any(r.start_angle != r.end_angle for r in it.allowed_rotations):
-            return True
-        bins = [(x1 - x0, y1 - y0) for x0, y0, x1, y1 in (b.shape.bounds for b in self.bin_types)]
-        for r in it.allowed_rotations:
-            boxes = [rotate(scale(s.shape, -1, 1, origin=(0, 0)) if r.mirror else s.shape,
-                            r.start_angle, origin=(0, 0)).bounds for s in it.shapes]
-            w = max(b[2] for b in boxes) - min(b[0] for b in boxes)
-            h = max(b[3] for b in boxes) - min(b[1] for b in boxes)
-            if any(w - bw <= 1e-6 and h - bh <= 1e-6 for bw, bh in bins):  # rotate() float noise
-                return True
-        return False
+    def write(self, instance_path: str | Path) -> None:
+        Path(instance_path).write_text(json.dumps(self.data), encoding="utf-8")
 
     def __repr__(self) -> str:
-        return (f"Instance(objective={self.objective.value!r}, "
-                f"bins={len(self.bin_types)}, items={len(self.item_types)})")
+        return f"Instance({self.data.get('objective')}, {self.number_of_bin_types()} bin types, " \
+               f"{self.number_of_item_types()} item types)"
 
 
 class InstanceBuilder:
-    """Fluent builder. Mirrors the upstream `InstanceBuilder` C++ class.
+    """Upstream's `InstanceBuilder`: ids are the order of the `add_*` calls; `build()` resets the builder."""
 
-    `add_bin(...)` and `add_item(...)` accept a Shapely Polygon, a `(w, h)`
-    tuple, or a numeric radius and dispatch to the right concrete adder. Tuples
-    and radii are discretized to Shapely polygons.
-    """
+    def __init__(self):
+        self._data: dict[str, Any] = {"parameters": {}, "bin_types": [], "item_types": []}
 
-    def __init__(self, objective: Objective | str = Objective.BIN_PACKING):
-        self._objective = Objective(objective)
-        self._bins: list[BinType] = []
-        self._items: list[ItemType] = []
-        self._params = Parameters()
+    def read(self, instance_path: str | Path) -> None:
+        """Read an instance from upstream's JSON format."""
+        self._data = json.loads(Path(instance_path).read_text(encoding="utf-8"))
+        self._data.setdefault("parameters", {})
 
-    def set_objective(self, objective: Objective | str) -> InstanceBuilder:
-        self._objective = Objective(objective)
-        return self
+    # MARK: parameters
 
-    def set_item_item_minimum_spacing(self, spacing: float) -> InstanceBuilder:
-        self._params.item_item_minimum_spacing = spacing
-        return self
+    def set_objective(self, objective: Objective) -> None:
+        self._data["objective"] = Objective(objective).value
 
-    def set_open_dimension_xy_aspect_ratio(self, ratio: float) -> InstanceBuilder:
-        self._params.open_dimension_xy_aspect_ratio = ratio
-        return self
+    def set_item_item_minimum_spacing(self, item_item_minimum_spacing: float) -> None:
+        self._data["parameters"]["item_item_minimum_spacing"] = item_item_minimum_spacing
 
-    def set_leftover_mode(self, mode: LeftoverMode | str) -> InstanceBuilder:
-        self._params.leftover_mode = LeftoverMode(mode)
-        return self
+    def set_open_dimension_xy_aspect_ratio(self, open_dimension_xy_aspect_ratio: float) -> None:
+        self._data["parameters"]["open_dimension_xy_aspect_ratio"] = open_dimension_xy_aspect_ratio
 
-    def add_bin(self, shape, *, cost: float = -1.0, copies: int = 1,
-                copies_min: int = 0, item_bin_minimum_spacing: float = 0.0) -> int:
-        """Add a bin. `shape` may be a Polygon, `(w, h)` tuple, or radius (float)."""
-        self._bins.append(BinType(
-            shape=_coerce_shape(shape), cost=cost, copies=copies,
-            copies_min=copies_min,
-            item_bin_minimum_spacing=item_bin_minimum_spacing))
-        return len(self._bins) - 1
+    def set_leftover_mode(self, leftover_mode: LeftoverMode) -> None:
+        self._data["parameters"]["leftover_mode"] = LeftoverMode(leftover_mode).value
 
-    def add_bin_type(self, shape, **kw) -> int:
-        return self.add_bin(shape, **kw)
+    def set_leftover_all_bins(self, leftover_all_bins: bool) -> None:
+        self._data["parameters"]["leftover_all_bins"] = leftover_all_bins
 
-    def add_bin_type_rectangle(self, width: float, height: float, **kw) -> int:
-        return self.add_bin(rectangle_polygon(width, height), **kw)
+    # MARK: bin types
 
-    def add_bin_type_circle(self, radius: float, resolution: int = ARC_RESOLUTION,
-                            **kw) -> int:
-        return self.add_bin(circle_polygon(radius, resolution=resolution), **kw)
+    def add_bin_type(self, shape: AnyShape, *, cost: float | None = None, item_bin_minimum_spacing: float | None = None,
+                     copies: int | None = None, copies_min: int | None = None) -> int:
+        """Add a bin type and return its id. `cost` defaults to the area, `copies` -1 is infinite. Upstream reads a
+        bin without holes, so each hole of `shape` becomes a defect."""
+        outer, holes = _outer_and_holes(shape)
+        b = _json(outer)
+        for key, value in (("cost", cost), ("item_bin_minimum_spacing", item_bin_minimum_spacing),
+                           ("copies", copies), ("copies_min", copies_min)):
+            if value is not None:
+                b[key] = value
+        self._data["bin_types"].append(b)
+        bin_type_id = len(self._data["bin_types"]) - 1
+        for hole in holes:
+            defect_id = self.add_defect(bin_type_id, -1, hole)
+            if item_bin_minimum_spacing:
+                self.set_item_defect_minimum_spacing(bin_type_id, defect_id, item_bin_minimum_spacing)
+        return bin_type_id
 
-    def add_defect(self, bin_type_id: int, shape, *, defect_type: int = -1,
-                   item_defect_minimum_spacing: float = 0.0) -> int:
-        self._bins[bin_type_id].defects.append(Defect(
-            shape=_coerce_shape(shape), defect_type=defect_type,
-            item_defect_minimum_spacing=item_defect_minimum_spacing))
-        return len(self._bins[bin_type_id].defects) - 1
+    def add_defect(self, bin_type_id: int, type: int, shape: AnyShape) -> int:
+        d = _json(shape)
+        if type != -1:
+            d["defect_type"] = type
+        defects = self._data["bin_types"][bin_type_id].setdefault("defects", [])
+        defects.append(d)
+        return len(defects) - 1
 
-    def add_fixed_item(self, bin_type_id: int, item_type_id: int,
-                       bl_corner: tuple[float, float], *,
-                       angle: float = 0.0, mirror: bool = False) -> int:
-        """Pre-place an item in every bin of `bin_type_id`. Solver packs around it."""
-        self._bins[bin_type_id].fixed_items.append(FixedItem(
-            item_type_id=item_type_id, bl_corner=tuple(bl_corner),
-            angle=angle, mirror=mirror))
-        return len(self._bins[bin_type_id].fixed_items) - 1
+    def set_item_defect_minimum_spacing(self, bin_type_id: int, defect_id: int,
+                                        item_defect_minimum_spacing: float) -> None:
+        self._data["bin_types"][bin_type_id]["defects"][defect_id]["item_defect_minimum_spacing"] = \
+            item_defect_minimum_spacing
 
-    def add_item(self, shape, *, profit: float = -1.0, copies: int = 1,
-                 copies_min: int = -1,
-                 allowed_rotations: list | None = None,
-                 allow_mirroring: bool = False) -> int:
-        """Add an item type.
+    def add_fixed_item(self, bin_type_id: int, item_type_id: int, bl_corner: tuple[float, float],
+                       angle: float = 0.0, mirror: bool = False) -> None:
+        """A placement fixed before the search, in every bin of the type (upstream C++ name; the Python bindings
+        lack it)."""
+        self._data["bin_types"][bin_type_id].setdefault("fixed_items", []).append(
+            {"item_type_id": item_type_id, "bl_corner": {"x": bl_corner[0], "y": bl_corner[1]},
+             "angle": angle, "mirror": mirror})
 
-        - `shape` may be a Polygon, list of Polygons / ItemShapes (multi-shape
-          item), an `(w, h)` tuple, or a numeric radius.
-        - `copies_min` forces at least that many copies to be packed. KNAPSACK
-          only: every other objective rejects `copies_min != copies`. Leave at
-          -1 for the solver default.
-        - `copies=-1` (KNAPSACK only, finite bins) means unlimited: the solver
-          resolves it to as many copies as the total bin area allows.
-        - `allowed_rotations` accepts:
-            * None / []           -> single fixed angle 0, no mirror
-            * list[float]         -> discrete angles
-            * list[(s, e)]        -> continuous ranges
-            * list[(s, e, mir)]   -> full triple form
-            * list[AllowedRotation]
-          When `allow_mirroring=True`, every base entry is duplicated with
-          `mirror=True`.
-        """
-        if isinstance(shape, list) and shape and not _is_pair(shape[0]):
-            shapes = [s if isinstance(s, ItemShape) else _item_shape(s) for s in shape]
-        else:
-            shapes = [_item_shape(shape)]
+    def add_bin_type_resource(self, bin_type_id: int, capacity: float, penalize: bool = False,
+                              penalty: float = 0.0) -> int:
+        """Add a resource to a bin type and return its id within that bin type."""
+        resources = self._data["bin_types"][bin_type_id].setdefault("resources", [])
+        resources.append({"capacity": capacity, "penalize": penalize, "penalty": penalty, "consumptions": []})
+        return len(resources) - 1
 
-        rots = _normalize_rotations(allowed_rotations, allow_mirroring)
-        self._items.append(ItemType(shapes=shapes, profit=profit,
-                                    copies=copies, copies_min=copies_min,
-                                    allowed_rotations=rots))
-        return len(self._items) - 1
+    def add_resource_consumption(self, bin_type_id: int, resource_id: int, item_type_id: int,
+                                 schedule: list[float]) -> None:
+        """Per-copy consumption of an item type; a copy past the end repeats the last entry."""
+        self._data["bin_types"][bin_type_id]["resources"][resource_id]["consumptions"].append(
+            {"item_type_id": item_type_id, "consumption_schedule": list(schedule)})
 
-    def add_item_type(self, shape, **kw) -> int:
-        return self.add_item(shape, **kw)
+    def set_bin_types_infinite_copies(self) -> None:
+        for b in self._data["bin_types"]:
+            b["copies"] = -1
 
-    def add_item_type_rectangle(self, width: float, height: float, **kw) -> int:
-        return self.add_item(rectangle_polygon(width, height), **kw)
+    def set_bin_types_unweighted(self) -> None:
+        for b in self._data["bin_types"]:
+            b.pop("cost", None)  # the default cost is the area
 
-    def add_item_type_circle(self, radius: float, resolution: int = ARC_RESOLUTION,
-                             **kw) -> int:
-        circle = ItemShape(shape=circle_polygon(radius, resolution=resolution),
-                           circle=(0.0, 0.0, float(radius)))
-        return self.add_item([circle], **kw)
+    # MARK: item types
+
+    def add_item_type(self, shapes: AnyShape | MultiPolygon | list[AnyShape], *,
+                      allowed_rotations: list[tuple[float, float, bool]] | None = None, profit: float | None = None,
+                      copies: int | None = None, copies_min: int | None = None) -> int:
+        """Add an item type and return its id. `shapes`: one shape, or several for one item. `allowed_rotations`:
+        `(start_angle, end_angle, mirror)` ranges, replacing the default `[(0, 0, False)]`. `profit` defaults to the
+        area, `copies` -1 is infinite, `copies_min` defaults from the objective."""
+        parts = list(getattr(shapes, "geoms", shapes if isinstance(shapes, list) else [shapes]))
+        it = _json(parts[0]) if len(parts) == 1 else {"shapes": [_json(p) for p in parts]}
+        if allowed_rotations is not None:
+            it["allowed_rotations"] = [{"start": s, "end": e, "mirror": m} for s, e, m in allowed_rotations]
+        for key, value in (("profit", profit), ("copies", copies), ("copies_min", copies_min)):
+            if value is not None:
+                it[key] = value
+        self._data["item_types"].append(it)
+        return len(self._data["item_types"]) - 1
+
+    def set_item_types_unweighted(self) -> None:
+        for it in self._data["item_types"]:
+            it.pop("profit", None)  # the default profit is the area
+
+    def set_item_types_continuous_rotations(self) -> None:
+        for it in self._data["item_types"]:
+            it["allowed_rotations"] = [{"start": 0, "end": 360, "mirror": False}]
 
     def build(self) -> Instance:
-        # Deep copy: later builder calls (add_defect, set_*) must not reach a built Instance.
-        return Instance(self._objective, *copy.deepcopy((self._bins, self._items)),
-                        copy.deepcopy(self._params))
-
-
-# MARK: shape coercion ────────────────────────────────────────────────────────
-
-
-def _item_shape(shape) -> ItemShape:
-    if isinstance(shape, (int, float)):  # a radius: a native circle, exact for the solver
-        return ItemShape(shape=circle_polygon(float(shape)), circle=(0.0, 0.0, float(shape)))
-    return ItemShape(shape=_coerce_shape(shape))
-
-
-def _coerce_shape(shape) -> ShapeLike:
-    """Normalize a user shape into a Shapely Polygon/MultiPolygon.
-
-    - `Polygon`/`MultiPolygon` -> passthrough
-    - `(w, h)` tuple  -> rectangle polygon
-    - numeric radius  -> circle polygon
-    """
-    if isinstance(shape, (Polygon, MultiPolygon)):
-        return shape
-    if isinstance(shape, (int, float)):
-        return circle_polygon(float(shape))
-    if isinstance(shape, tuple) and len(shape) == 2:
-        return rectangle_polygon(float(shape[0]), float(shape[1]))
-    raise TypeError(f"Cannot convert {type(shape).__name__!s} to a shape")
-
-
-def _is_pair(x) -> bool:
-    return isinstance(x, (tuple, list)) and len(x) in (2, 3) and all(
-        isinstance(v, (int, float, bool)) for v in x)
-
-
-def _normalize_rotations(rots, mirror_all: bool) -> list[AllowedRotation]:
-    if not rots:
-        base = [AllowedRotation()]
-    else:
-        base = []
-        for r in rots:
-            if isinstance(r, AllowedRotation):
-                base.append(r)
-            elif isinstance(r, (int, float)):
-                base.append(AllowedRotation(float(r), float(r), False))
-            elif isinstance(r, (tuple, list)):
-                if len(r) == 2:
-                    base.append(AllowedRotation(float(r[0]), float(r[1]), False))
-                elif len(r) == 3:
-                    base.append(AllowedRotation(float(r[0]), float(r[1]), bool(r[2])))
-                else:
-                    raise ValueError(f"Bad rotation entry: {r!r}")
-            else:
-                raise TypeError(f"Bad rotation entry: {r!r}")
-    if mirror_all:
-        base = base + [AllowedRotation(r.start_angle, r.end_angle, True)
-                       for r in base if not r.mirror]
-    return base
-
-
-# MARK: parameters ────────────────────────────────────────────────────────────
-
-
-def _params_to_dict(p: Parameters) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    if p.item_item_minimum_spacing:
-        out["item_item_minimum_spacing"] = p.item_item_minimum_spacing
-    if p.open_dimension_xy_aspect_ratio > 0:
-        out["open_dimension_xy_aspect_ratio"] = p.open_dimension_xy_aspect_ratio
-    if p.leftover_mode != LeftoverMode.BOTTOM_LEFT:
-        out["leftover_mode"] = p.leftover_mode.value
-    return out
-
-
-def _params_from_dict(jp: dict) -> Parameters:
-    return Parameters(
-        item_item_minimum_spacing=jp.get("item_item_minimum_spacing", 0.0),
-        open_dimension_xy_aspect_ratio=jp.get("open_dimension_xy_aspect_ratio", -1.0),
-        leftover_mode=LeftoverMode(jp["leftover_mode"]) if "leftover_mode" in jp
-        else LeftoverMode.BOTTOM_LEFT,
-    )
-
-
-# MARK: bins ──────────────────────────────────────────────────────────────────
-
-
-def _bin_to_dict(b: BinType) -> dict[str, Any]:
-    # The C++ reads a bin as a plain Shape and drops "holes": send each hole as a defect instead.
-    holes = [Defect(shape=Polygon(r), item_defect_minimum_spacing=b.item_bin_minimum_spacing)
-             for r in getattr(b.shape, "interiors", ())]
-    out = shape_to_json(Polygon(b.shape.exterior) if holes else b.shape)
-    if b.cost != -1.0:
-        out["cost"] = b.cost
-    if b.copies != 1:
-        out["copies"] = b.copies
-    if b.copies_min:
-        out["copies_min"] = b.copies_min
-    if b.item_bin_minimum_spacing:
-        out["item_bin_minimum_spacing"] = b.item_bin_minimum_spacing
-    if b.defects or holes:
-        out["defects"] = [_defect_to_dict(d) for d in b.defects + holes]
-    if b.fixed_items:
-        out["fixed_items"] = [_fixed_to_dict(f) for f in b.fixed_items]
-    return out
-
-
-def _bin_from_dict(jb: dict) -> BinType:
-    return BinType(
-        shape=shape_from_json(jb),
-        cost=jb.get("cost", -1.0),
-        copies=jb.get("copies", 1),
-        copies_min=jb.get("copies_min", 0),
-        item_bin_minimum_spacing=jb.get("item_bin_minimum_spacing", 0.0),
-        defects=[_defect_from_dict(d) for d in jb.get("defects", [])],
-        fixed_items=[_fixed_from_dict(f) for f in jb.get("fixed_items", [])],
-    )
-
-
-def _fixed_to_dict(f: FixedItem) -> dict[str, Any]:
-    return {
-        "item_type_id": f.item_type_id,
-        "bl_corner": {"x": f.bl_corner[0], "y": f.bl_corner[1]},
-        "angle": f.angle,
-        "mirror": f.mirror,
-    }
-
-
-def _fixed_from_dict(jf: dict) -> FixedItem:
-    bl = jf.get("bl_corner", {})
-    return FixedItem(
-        item_type_id=jf.get("item_type_id", 0),
-        bl_corner=(bl.get("x", 0.0), bl.get("y", 0.0)),
-        angle=jf.get("angle", 0.0),
-        mirror=jf.get("mirror", False),
-    )
-
-
-def _defect_to_dict(d: Defect) -> dict[str, Any]:
-    out = shape_to_json(d.shape)
-    if d.defect_type != -1:
-        out["defect_type"] = d.defect_type
-    if d.item_defect_minimum_spacing:
-        out["item_defect_minimum_spacing"] = d.item_defect_minimum_spacing
-    return out
-
-
-def _defect_from_dict(jd: dict) -> Defect:
-    return Defect(
-        shape=shape_from_json(jd),
-        defect_type=jd.get("defect_type", -1),
-        item_defect_minimum_spacing=jd.get("item_defect_minimum_spacing", 0.0),
-    )
-
-
-# MARK: items ─────────────────────────────────────────────────────────────────
-
-
-def _item_to_dict(it: ItemType) -> dict[str, Any]:
-    parts = [j for s in it.shapes for j in _item_shape_to_json(s)]
-    out = parts[0] if len(parts) == 1 else {"shapes": parts}
-    if it.profit != -1.0:
-        out["profit"] = it.profit
-    if it.copies != 1:
-        out["copies"] = it.copies
-    if it.copies_min >= 0:
-        out["copies_min"] = it.copies_min
-    if it.allowed_rotations != [AllowedRotation()]:
-        out["allowed_rotations"] = [_rot_to_dict(r) for r in it.allowed_rotations]
-    return out
-
-
-def _item_shape_to_json(s: ItemShape) -> list[dict[str, Any]]:
-    if s.circle:
-        x, y, r = s.circle
-        return [{"type": "circle", "x": x, "y": y, "radius": r}]
-    # The JSON has no multipolygon: each part of a MultiPolygon becomes one shape of the item.
-    return [shape_to_json(g) for g in getattr(s.shape, "geoms", [s.shape])]
-
-
-def _item_shape_from_json(js: dict) -> ItemShape:
-    circle = (js.get("x", 0.0), js.get("y", 0.0), js["radius"]) if js.get("type") == "circle" else None
-    return ItemShape(shape=shape_from_json(js), circle=circle)
-
-
-def _item_from_dict(ji: dict) -> ItemType:
-    shapes = [_item_shape_from_json(js) for js in ji.get("shapes", [ji])]
-    rots = _normalize_rotations([_rot_from_dict(r) for r in ji.get("allowed_rotations", [])],
-                                bool(ji.get("allow_mirroring")))
-    return ItemType(shapes=shapes, profit=ji.get("profit", -1.0),
-                    copies=ji.get("copies", 1),
-                    copies_min=ji.get("copies_min", -1),
-                    allowed_rotations=rots)
-
-
-def _rot_to_dict(r: AllowedRotation) -> dict[str, Any]:
-    return {"start": r.start_angle, "end": r.end_angle, "mirror": r.mirror}
-
-
-def _rot_from_dict(jr: dict) -> AllowedRotation:
-    return AllowedRotation(
-        start_angle=jr.get("start", jr.get("start_angle", 0.0)),
-        end_angle=jr.get("end", jr.get("end_angle", 0.0)),
-        mirror=jr.get("mirror", False),
-    )
-# __PYCK_END__
+        """Build the instance; the builder is reset afterwards."""
+        instance = Instance(self._data)
+        self.__init__()
+        return instance
