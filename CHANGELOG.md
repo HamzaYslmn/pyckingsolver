@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.11.0 (unreleased, breaking)
+## 0.11.1
+
+- C++ pin `796d6cfbc`: `anchor` enforces the item spacings (corners facing each other diagonally
+  included), and the linear-programming separation model of the local search handles circular arcs
+  on items, fixed items and defects. API unchanged.
+
+## 0.11.0 (breaking)
 
 - The API mirrors upstream's Python module `packingsolver.irregular`, with Shapely shapes and no
   compatibility layer: `InstanceBuilder` (`add_bin_type`, `add_item_type(shapes, allowed_rotations=...)`,
