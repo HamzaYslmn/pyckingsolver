@@ -139,10 +139,11 @@ Measured on the bundled binary:
   discs at 4 with a resource gives profit 48; `copies=4` instead gives 64. A resource every item type
   consumes (the `resource` scenario) behaves.
 
-## What's new in 0.11.1
+## What's new in 0.11.2
 
-C++ pin `796d6cfbc`: `anchor` now keeps the item spacings, and the local search's linear-programming
-separation handles circular arcs. API unchanged. History in [CHANGELOG.md](CHANGELOG.md).
+C++ pin `da9cc8f52`: when many items fit across the bin, a single-bin knapsack now runs the tree search
+with maximal spaces, which also got faster and no longer hangs on many item types. API unchanged.
+History in [CHANGELOG.md](CHANGELOG.md).
 
 ## Building the solver
 

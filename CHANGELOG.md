@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.2
+
+- C++ pin `da9cc8f52`: on one bin, Knapsack or Feasibility, the automatic selection runs the tree search
+  with maximal spaces when bin height / mean item height and bin width / mean item width both exceed 4.
+  That search limits its framed blocks, prunes slides with exact score bounds (same results, sooner),
+  and keeps the spaces above blocks under item-item spacing. Upstream's two many-item-type instances
+  (1000 and 2000 types, 60 s): 83.4% and 85.8% of the bin. API unchanged; the new
+  `many_items_in_section_threshold` is not a CLI option.
+- A Knapsack with any `copies_min > 0` and no `use_*` set runs the tree search: the search with maximal
+  spaces ignores `copies_min` and returned an empty solution.
+
 ## 0.11.1
 
 - C++ pin `796d6cfbc`: `anchor` enforces the item spacings (corners facing each other diagonally

@@ -1,7 +1,7 @@
 # pyckingsolver: Agent Knowledge
 
 Python wrapper over [fontanf/packingsolver](https://github.com/fontanf/packingsolver)'s irregular (2D
-nesting) solver. Wrapper `0.11.1`, submodule `extern/packingsolver` at `796d6cfbc`.
+nesting) solver. Wrapper `0.11.2`, submodule `extern/packingsolver` at `da9cc8f52`.
 
 **Design rule.** The API mirrors upstream's own Python module `packingsolver.irregular`
 (`extern/packingsolver/python/src/irregular.cpp`, `common.hpp`): same class, method, argument, field
@@ -60,6 +60,10 @@ extern/packingsolver/        # upstream; the CLI is src/irregular/main.cpp
 - `reduction_parameters.reduce` None sends nothing, except `--reduce 0` when any bin type has fixed
   items: reduction merges identical item types and a pinned merged type throws "fixed item type id not
   found in sub-instance mapping" (measured on `8b083c66`: exit 1 with reduce on, solves with it off).
+- `--use-tree-search 1` is sent for a Knapsack with any `copies_min > 0` when no `use_*` is set: the
+  tree search with maximal spaces, which auto-selection may pick since `a7c579e5`, ignores `copies_min`
+  (measured on `da9cc8f52`: 100x100 bin, a 90x90 with `copies_min=1` and 25 20x20s gives an empty
+  solution there, the forced item with tree search). This also skips periodic packing for that run.
 - Any `use_*` set True skips upstream's automatic selection (`optimize.cpp`), so only the chosen
   algorithms run. False equals None (every upstream default is false).
 - `group_identical_bins` and `anchor` are applied by `main.cpp` after `optimize`, to the final
@@ -109,12 +113,15 @@ extern/packingsolver/        # upstream; the CLI is src/irregular/main.cpp
 - **Periodic packing** (source, `optimize.cpp`): on one bin, auto-selection runs it once item types with
   more than 16 copies cover over 80% of the free bin area or of the item area; tree search runs beside
   it only when fewer than 64 items fit. So pass identical parts as one type with `copies=N`.
+- **Maximal spaces** (source, `optimize.cpp`, since `a7c579e5`): on one bin, Knapsack or Feasibility,
+  auto-selection runs the tree search with maximal spaces instead of the tree search once bin height /
+  mean item height and bin width / mean item width both exceed 4 (`many_items_in_section_threshold`).
 - `set_item_item_minimum_spacing` is the true gap between items (checked); never pre-buffer shapes.
 
 ## MARK: Upstream features the CLI cannot reach
 
 Not set by `main.cpp` (verify against it after a submodule move): `tree_search_guides`,
-`many_items_in_bins_threshold`, `many_item_type_copies_factor`, `periodic_packing_copies_threshold`,
+`many_items_in_bins_threshold`, `many_items_in_section_threshold`, `many_item_type_copies_factor`, `periodic_packing_copies_threshold`,
 `periodic_packing_max_items_threshold`, `post_process`,
 `benders_decomposition_subproblem_tree_search_queue_size`,
 `not_anytime_benders_decomposition_number_of_iterations`, `maximum_size_of_the_solution_pool`,

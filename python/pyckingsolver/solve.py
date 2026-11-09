@@ -274,6 +274,10 @@ def _flags(p: OptimizeParameters, instance: Instance) -> list[str]:
     reduce = p.reduction_parameters.reduce
     if reduce is None and any("fixed_items" in b for b in instance.data["bin_types"]):
         reduce = False  # upstream's reduction drops the type mapping fixed items need, and the build throws
+    if (not any(getattr(p, f.name) for f in fields(p) if f.name.startswith("use_"))
+            and instance.objective() == Objective.Knapsack
+            and any(t.get("copies_min", 0) > 0 for t in instance.data["item_types"])):
+        cmd += ["--use-tree-search", "1"]  # auto-selection may pick maximal spaces, which ignores copies_min
     return cmd + (["--reduce", "1" if reduce else "0"] if reduce is not None else [])
 
 
