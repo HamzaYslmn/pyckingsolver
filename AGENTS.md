@@ -1,7 +1,7 @@
 # pyckingsolver: Agent Knowledge
 
 Python wrapper over [fontanf/packingsolver](https://github.com/fontanf/packingsolver)'s irregular (2D
-nesting) solver. Wrapper `0.11.2`, submodule `extern/packingsolver` at `da9cc8f52`.
+nesting) solver. Wrapper `0.11.3`, submodule `extern/packingsolver` at `f9c90a7a`.
 
 **Design rule.** The API mirrors upstream's own Python module `packingsolver.irregular`
 (`extern/packingsolver/python/src/irregular.cpp`, `common.hpp`): same class, method, argument, field
@@ -46,7 +46,7 @@ extern/packingsolver/        # upstream; the CLI is src/irregular/main.cpp
   `8b083c66`; a capacity-3 resource caps a knapsack at 3 copies (measured).
 - Pose: an item is mirrored about the y axis, turned `angle` degrees about the origin, then moved to
   `bl_corner`. Certificate items also carry their placed shapes, which `shape_scaled` reads. Fixed items
-  come back with the packed ones; `is_fixed` matches a pose to the bin type's `fixed_items`.
+  come back with the packed ones, carrying `fixed_item_pos` (since `d982595c`), which `is_fixed` reads.
 
 ## MARK: OptimizeParameters to CLI flags (`solve.py::_flags`)
 

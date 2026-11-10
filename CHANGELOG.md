@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.3
+
+- C++ pin `f9c90a7a`: certificates mark each fixed item with `fixed_item_pos`, its position in the bin
+  type's fixed items, so a fixed item read back from a certificate stays fixed. `SolutionItem.is_fixed`
+  now reads that field instead of matching poses. Placements unchanged; reduction with identical pinned
+  item types still throws, so `--reduce 0` stays.
+
 ## 0.11.2
 
 - C++ pin `da9cc8f52`: on one bin, Knapsack or Feasibility, the automatic selection runs the tree search

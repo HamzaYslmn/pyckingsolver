@@ -124,10 +124,6 @@ class SolutionBin:
     items: list[SolutionItem]
 
 
-def _pose(item_type_id, x, y, angle) -> tuple:
-    return item_type_id, round(x, 6), round(y, 6), round(angle, 6)  # the certificate echoes a fixed pose to float noise
-
-
 class Solution:
     """A certificate (upstream's solution JSON) with upstream's accessors. The metrics come from the binary's
     output; a solution with none (nothing found) answers 0."""
@@ -135,13 +131,10 @@ class Solution:
     def __init__(self, certificate: dict[str, Any] | None, metrics: dict[str, Any], instance: Instance):
         self._json = certificate or {"bins": []}
         self._metrics = metrics
-        fixed = [{_pose(f["item_type_id"], f["bl_corner"]["x"], f["bl_corner"]["y"], f.get("angle", 0.0))
-                  for f in b.get("fixed_items", [])} for b in instance.data["bin_types"]]
         self.objective = instance.objective()
         self.bins = [SolutionBin(b["id"], b["copies"], [
-            SolutionItem(i["id"], Point(i["x"], i["y"]), i["angle"], i["mirror"],
-                         _pose(i["id"], i["x"], i["y"], i["angle"]) in fixed[b["id"]]) for i in b["items"]])
-            for b in self._json["bins"]]
+            SolutionItem(i["id"], Point(i["x"], i["y"]), i["angle"], i["mirror"], "fixed_item_pos" in i)
+            for i in b["items"]]) for b in self._json["bins"]]
 
     def number_of_bins(self) -> int:
         return sum(b.copies for b in self.bins)
