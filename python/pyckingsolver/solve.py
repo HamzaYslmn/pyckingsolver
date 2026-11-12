@@ -57,6 +57,9 @@ class OptimizeParameters:
     use_global_nonlinear_programming: bool | None = None  # needs SCIP
     use_benders_decomposition: bool | None = None
     benders_decomposition_use_tree_search_relative_positions: bool | None = None
+    benders_decomposition_bottom_up_maximum_number_of_subproblem_solves: int | None = None
+    benders_decomposition_bottom_up_maximum_number_of_cuts: int | None = None
+    benders_decomposition_use_lifting: bool | None = None
     use_sequential_single_knapsack: bool | None = None
     use_sequential_value_correction: bool | None = None
     use_dichotomic_search: bool | None = None

@@ -1,7 +1,7 @@
 # pyckingsolver: Agent Knowledge
 
 Python wrapper over [fontanf/packingsolver](https://github.com/fontanf/packingsolver)'s irregular (2D
-nesting) solver. Wrapper `0.11.3`, submodule `extern/packingsolver` at `f9c90a7a`.
+nesting) solver. Wrapper `0.11.4`, submodule `extern/packingsolver` at `28ac801d`.
 
 **Design rule.** The API mirrors upstream's own Python module `packingsolver.irregular`
 (`extern/packingsolver/python/src/irregular.cpp`, `common.hpp`): same class, method, argument, field
@@ -43,7 +43,7 @@ extern/packingsolver/        # upstream; the CLI is src/irregular/main.cpp
   item `copies_min` -1 resolves to 0 under Knapsack and to `copies` otherwise (any other value outside
   Knapsack throws in `build()`), no rotations means `(0, 0, False)`, a fixed item's angle/mirror 0/false.
 - Resources (`add_bin_type_resource`, `add_resource_consumption`) are read from the JSON since
-  `8b083c66`; a capacity-3 resource caps a knapsack at 3 copies (measured).
+  `8b083c66`; a capacity-3 resource caps a knapsack at 3 copies (measured). `set_bin_type_resource_tolerance` writes `tolerance` (since `d4f0bafb`); unset, upstream derives it from the capacity.
 - Pose: an item is mirrored about the y axis, turned `angle` degrees about the origin, then moved to
   `bl_corner`. Certificate items also carry their placed shapes, which `shape_scaled` reads. Fixed items
   come back with the packed ones, carrying `fixed_item_pos` (since `d982595c`), which `is_fixed` reads.
@@ -123,7 +123,7 @@ extern/packingsolver/        # upstream; the CLI is src/irregular/main.cpp
 Not set by `main.cpp` (verify against it after a submodule move): `tree_search_guides`,
 `many_items_in_bins_threshold`, `many_items_in_section_threshold`, `many_item_type_copies_factor`, `periodic_packing_copies_threshold`,
 `periodic_packing_max_items_threshold`, `post_process`,
-`benders_decomposition_subproblem_tree_search_queue_size`,
+`benders_decomposition_subproblem_tree_search_queue_size`, `tree_search_relative_positions_growing_subsets`,
 `not_anytime_benders_decomposition_number_of_iterations`, `maximum_size_of_the_solution_pool`,
 `mps_prefix`, `log_to_stderr`. Quality rules exist only through C++ `add_quality_rule`; the JSON reader
 has no key for them. The Knitro engines and `use_global_nonlinear_programming` (SCIP) need solvers the
@@ -153,6 +153,6 @@ cd test && uv run python test_pyckingsolver.py
 ```
 
 About 14 s: the instance JSON (rings, bin holes as defects, sweeps, read/write), CLI option drift
-(66 options: 51 parameters, 8 builder, 5 wired), holes plus spacing plus pose against the certificate,
+(69 options: 54 parameters, 8 builder, 5 wired), holes plus spacing plus pose against the certificate,
 `copies_min`, resources, pins with reduction off, infeasibility, `new_solution_callback` with an early
 stop, cancel, and the watchdog on stand-in child processes.

@@ -139,10 +139,10 @@ Measured on the bundled binary:
   discs at 4 with a resource gives profit 48; `copies=4` instead gives 64. A resource every item type
   consumes (the `resource` scenario) behaves.
 
-## What's new in 0.11.3
+## What's new in 0.11.4
 
-C++ pin `f9c90a7a`: certificates now mark fixed items (`fixed_item_pos`), and `is_fixed` reads that
-mark. Placements and API unchanged.
+C++ pin `28ac801d`: the tree search with maximal spaces places blocks against the left wall of an empty
+space, three Benders decomposition options, and `set_bin_type_resource_tolerance`.
 History in [CHANGELOG.md](CHANGELOG.md).
 
 ## Building the solver

@@ -142,7 +142,8 @@ def test_copies_min_fixed_items_resources_infeasible():
         big = ib.add_item_type(ps.build_rectangle(90, 90), profit=1, copies_min=copies_min)
         small = ib.add_item_type(ps.build_rectangle(20, 20), profit=50, copies=25)
         if capacity is not None:
-            ib.add_resource_consumption(0, ib.add_bin_type_resource(0, capacity), small, [1])
+            ib.add_resource_consumption(0, r := ib.add_bin_type_resource(0, capacity), small, [1])
+            ib.set_bin_type_resource_tolerance(0, r, 0.5)  # upstream reads the key: a bad one throws
         for k in range(pins):  # identical pinned types: upstream's reduction would merge them and throw
             ib.add_fixed_item(0, ib.add_item_type(ps.build_rectangle(20, 20)), (k * 25, 80))
         return ps.optimize(ib.build(), params(time_limit=5)).solution

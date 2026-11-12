@@ -175,6 +175,11 @@ class InstanceBuilder:
         resources.append({"capacity": capacity, "penalize": penalize, "penalty": penalty, "consumptions": []})
         return len(resources) - 1
 
+    def set_bin_type_resource_tolerance(self, bin_type_id: int, resource_id: int, tolerance: float) -> None:
+        """Absolute tolerance of the consumption comparisons (upstream C++ name); unset, upstream derives it from
+        the capacity."""
+        self._data["bin_types"][bin_type_id]["resources"][resource_id]["tolerance"] = tolerance
+
     def add_resource_consumption(self, bin_type_id: int, resource_id: int, item_type_id: int,
                                  schedule: list[float]) -> None:
         """Per-copy consumption of an item type; a copy past the end repeats the last entry."""

@@ -128,7 +128,7 @@ wheels = [
 
 [[package]]
 name = "pyckingsolver"
-version = "0.11.3"
+version = "0.11.4"
 source = { editable = "../python" }
 dependencies = [
     { name = "shapely" },

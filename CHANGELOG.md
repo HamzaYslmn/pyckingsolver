@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.4
+
+- C++ pin `28ac801d`: the tree search with maximal spaces keeps a block stopped by the left wall of its
+  empty space (none could go above a slope), and weights its guide by profit per unit of area squared
+  (unchanged when profits are the areas). The Benders decomposition enumerates minimal infeasible
+  subsets bottom-up and lifts no cuts by default. Resources compare consumptions with a tolerance.
+- New `OptimizeParameters`: `benders_decomposition_bottom_up_maximum_number_of_subproblem_solves`,
+  `benders_decomposition_bottom_up_maximum_number_of_cuts`, `benders_decomposition_use_lifting`. New
+  `InstanceBuilder.set_bin_type_resource_tolerance`. The tree search with maximal spaces still ignores
+  `copies_min`, so the forced tree search stays.
+
 ## 0.11.3
 
 - C++ pin `f9c90a7a`: certificates mark each fixed item with `fixed_item_pos`, its position in the bin
