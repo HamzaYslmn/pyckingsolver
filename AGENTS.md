@@ -1,7 +1,7 @@
 # pyckingsolver: Agent Knowledge
 
 Python wrapper over [fontanf/packingsolver](https://github.com/fontanf/packingsolver)'s irregular (2D
-nesting) solver. Wrapper `0.11.4`, submodule `extern/packingsolver` at `28ac801d`.
+nesting) solver. Wrapper `0.11.5`, submodule `extern/packingsolver` at `953a195c`.
 
 **Design rule.** The API mirrors upstream's own Python module `packingsolver.irregular`
 (`extern/packingsolver/python/src/irregular.cpp`, `common.hpp`): same class, method, argument, field

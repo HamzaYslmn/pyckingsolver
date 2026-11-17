@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.5
+
+- C++ pin `953a195c`: the direct trigonometry local search (auto-selected for every objective but
+  Knapsack) tests polygon intersections faster on many-edge items, results unchanged, and its
+  disruptions turn a swapped item to the other one's orientation, as in Sparrow, so a thin part that no
+  longer fits lying can turn. Thread end flags are atomic (a data race). Upstream also reads
+  `knapsack_goal` and `knapsack_cutoff` from the instance JSON; the builder does not write them yet.
+  API unchanged.
+
 ## 0.11.4
 
 - C++ pin `28ac801d`: the tree search with maximal spaces keeps a block stopped by the left wall of its

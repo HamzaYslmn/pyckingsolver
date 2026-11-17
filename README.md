@@ -139,10 +139,10 @@ Measured on the bundled binary:
   discs at 4 with a resource gives profit 48; `copies=4` instead gives 64. A resource every item type
   consumes (the `resource` scenario) behaves.
 
-## What's new in 0.11.4
+## What's new in 0.11.5
 
-C++ pin `28ac801d`: the tree search with maximal spaces places blocks against the left wall of an empty
-space, three Benders decomposition options, and `set_bin_type_resource_tolerance`.
+C++ pin `953a195c`: a faster direct trigonometry local search on many-edge items, whose disruptions can
+now turn thin parts. API unchanged.
 History in [CHANGELOG.md](CHANGELOG.md).
 
 ## Building the solver
