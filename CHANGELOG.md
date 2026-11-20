@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.6
+
+- C++ pin `20398b4f`: the tree searches (tree search, maximal spaces, periodic packing) keep each node's
+  hash instead of rehashing its copies on every lookup, same nodes explored. The periodic packing and
+  shape simplification precomputations stop at the time limit (they ran 30-40 s past it under load).
+  The multi-bin algorithms compute the periodic packings once, not per sub-instance.
+- New `OptimizeParameters`: `anytime_sequential_single_knapsack_subproblem_tree_search_maximal_spaces_initial_queue_size`,
+  `not_anytime_sequential_single_knapsack_subproblem_tree_search_maximal_spaces_queue_size`.
+
 ## 0.11.5
 
 - C++ pin `953a195c`: the direct trigonometry local search (auto-selected for every objective but

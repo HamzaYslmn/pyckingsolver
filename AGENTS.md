@@ -1,7 +1,7 @@
 # pyckingsolver: Agent Knowledge
 
 Python wrapper over [fontanf/packingsolver](https://github.com/fontanf/packingsolver)'s irregular (2D
-nesting) solver. Wrapper `0.11.5`, submodule `extern/packingsolver` at `953a195c`.
+nesting) solver. Wrapper `0.11.6`, submodule `extern/packingsolver` at `20398b4f`.
 
 **Design rule.** The API mirrors upstream's own Python module `packingsolver.irregular`
 (`extern/packingsolver/python/src/irregular.cpp`, `common.hpp`): same class, method, argument, field
@@ -153,6 +153,6 @@ cd test && uv run python test_pyckingsolver.py
 ```
 
 About 14 s: the instance JSON (rings, bin holes as defects, sweeps, read/write), CLI option drift
-(69 options: 54 parameters, 8 builder, 5 wired), holes plus spacing plus pose against the certificate,
+(71 options: 56 parameters, 8 builder, 5 wired), holes plus spacing plus pose against the certificate,
 `copies_min`, resources, pins with reduction off, infeasibility, `new_solution_callback` with an early
 stop, cancel, and the watchdog on stand-in child processes.

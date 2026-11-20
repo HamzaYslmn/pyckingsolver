@@ -139,10 +139,10 @@ Measured on the bundled binary:
   discs at 4 with a resource gives profit 48; `copies=4` instead gives 64. A resource every item type
   consumes (the `resource` scenario) behaves.
 
-## What's new in 0.11.5
+## What's new in 0.11.6
 
-C++ pin `953a195c`: a faster direct trigonometry local search on many-edge items, whose disruptions can
-now turn thin parts. API unchanged.
+C++ pin `20398b4f`: faster tree searches (cached node hashes), periodic packing precomputations that stop
+at the time limit, and two sequential single knapsack queue-size options.
 History in [CHANGELOG.md](CHANGELOG.md).
 
 ## Building the solver

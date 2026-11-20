@@ -29,4 +29,4 @@ from pyckingsolver.solve import (
     OptimizeCancelled, OptimizeParameters, Output, ReductionParameters, Solution, SolutionBin, SolutionItem, optimize,
 )
 
-__version__ = "0.11.5"
+__version__ = "0.11.6"

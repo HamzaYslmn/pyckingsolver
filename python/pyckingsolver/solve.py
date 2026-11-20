@@ -85,6 +85,8 @@ class OptimizeParameters:
     anytime_sequential_single_knapsack_subproblem_local_search_initial_maximum_number_of_moves_factor: int | None = None
     not_anytime_sequential_single_knapsack_subproblem_tree_search_periodic_packing_queue_size: int | None = None
     not_anytime_sequential_single_knapsack_subproblem_local_search_maximum_number_of_moves_factor: int | None = None
+    anytime_sequential_single_knapsack_subproblem_tree_search_maximal_spaces_initial_queue_size: int | None = None
+    not_anytime_sequential_single_knapsack_subproblem_tree_search_maximal_spaces_queue_size: int | None = None
     not_anytime_dichotomic_search_subproblem_tree_search_queue_size: int | None = None
     reduction_parameters: ReductionParameters = field(default_factory=ReductionParameters)
     # CLI-only knobs, not in upstream's Python OptimizeParameters
